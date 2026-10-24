@@ -1,0 +1,970 @@
+<!-- /opt/ai/projects/course_web/static/index.html -->
+
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>پلنر دوره آموزشی</title>
+<style>
+  :root {
+    --bg: #f4f5f8; --card: #ffffff; --text: #1b2130; --muted: #566074; --line: #d9dee8;
+    --accent: #2150c8; --accent-text: #ffffff; --ok: #19794a; --ok-bg: #e5f4ec;
+    --warn-bg: #fff3d1; --warn-text: #5c4300; --err-bg: #fde7e5; --err-text: #8c1d13;
+    --danger: #b3261e; --danger-text: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --card: #1b2029; --text: #e9ecf3; --muted: #a2acc0; --line: #2d3543;
+      --accent: #7a9cff; --accent-text: #0b1020; --ok: #4cc38a; --ok-bg: #163021;
+      --warn-bg: #3a3014; --warn-text: #f3dc9a; --err-bg: #3b1b18; --err-text: #ffb4ab;
+      --danger: #ff8a80; --danger-text: #2b0a07;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 17px/1.75 "Vazirmatn", "Vazir", Tahoma, "Segoe UI", system-ui, -apple-system, sans-serif;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 20px 16px 90px; }
+  h1 { font-size: 1.55rem; margin: 0 0 16px; }
+  h2 { font-size: 1.2rem; margin: 0 0 10px; }
+  h3 { font-size: 1.1rem; margin: 0; }
+  p { margin: 0 0 10px; }
+  .brand { color: inherit; text-decoration: none; }
+  .muted { color: var(--muted); }
+  .hint { color: var(--muted); font-size: .85rem; margin: 4px 0 12px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; }
+  .field { display: flex; flex-direction: column; gap: 4px; font-size: .95rem; color: var(--muted); }
+  input[type=text], input[type=number], input[type=search], select {
+    font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 10px; padding: 8px 12px; min-height: 44px;
+  }
+  .field input[type=text], .search { width: 100%; }
+  .search { margin-bottom: 14px; }
+  .ltr { direction: ltr; text-align: left; }
+  input[type=number] { width: 110px; }
+  input[aria-invalid=true] { border-color: var(--err-text); }
+  input[type=checkbox] { width: 22px; height: 22px; accent-color: var(--accent); flex: none; cursor: pointer; }
+  fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+  button { font: inherit; cursor: pointer; }
+  .btn { background: var(--accent); color: var(--accent-text); border: 0; border-radius: 10px; padding: 8px 18px; min-height: 44px; font-weight: 700; }
+  a.btn { display: inline-flex; align-items: center; justify-content: center; text-decoration: none; }
+  .btn.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); font-weight: 600; }
+  .btn.danger { background: var(--danger); color: var(--danger-text); }
+  .btn[disabled] { opacity: .6; cursor: wait; }
+  .btn-text { background: none; border: 0; color: var(--accent); font-weight: 600; padding: 8px 10px; min-height: 44px; border-radius: 10px; }
+  .btn-text:hover { background: var(--bg); }
+  .btn-text.danger-text { color: var(--danger); }
+  :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  a { color: var(--accent); }
+  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid currentColor; border-inline-end-color: transparent;
+          border-radius: 50%; animation: sp .8s linear infinite; vertical-align: -2px; margin-inline-end: 8px; }
+  @keyframes sp { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 2.4s; } }
+
+  .toast { position: fixed; inset-inline: 16px; bottom: 16px; max-width: 700px; margin: 0 auto; z-index: 10;
+           padding: 10px 16px; border-radius: 12px; font-weight: 600; box-shadow: 0 6px 24px rgba(0,0,0,.25);
+           display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .toast.ok { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+  .toast.error { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-text); }
+  .toast.info { background: var(--card); color: var(--text); border: 1px solid var(--line); }
+  .toast-btn { background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 8px;
+               padding: 2px 14px; min-height: 36px; font-weight: 700; flex: none; }
+  .notice { padding: 10px 14px; border-radius: 10px; margin-bottom: 12px; background: var(--warn-bg); color: var(--warn-text); }
+  .notice p:last-of-type { margin-bottom: 0; }
+  .notice .btn { margin-top: 8px; }
+
+  /* ---- فهرست برنامه‌ها ---- */
+  .page-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
+  .page-head h2 { margin: 0; font-size: 1.3rem; }
+  .pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
+  .pcard { position: relative; display: flex; flex-direction: column; gap: 10px; background: var(--card);
+           border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .pcard:hover, .pcard:focus-within { border-color: var(--accent); }
+  .pcard .btn.open::after { content: ""; position: absolute; inset: 0; border-radius: 14px; }
+  .pcard .btn.open:focus-visible { outline-offset: -3px; }
+  .pcard .btn-text { position: relative; z-index: 1; }
+  .pcard .bar { margin: 0 0 6px; }
+  .pmeta { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; font-size: .9rem; }
+  .pactions { display: flex; gap: 4px; align-items: center; margin-top: auto; padding-top: 4px; flex-wrap: wrap; }
+  .pactions .btn { margin-inline-end: auto; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; font-size: .82rem; line-height: 1.6; padding: 0 10px; border-radius: 99px;
+          background: var(--bg); border: 1px solid var(--line); color: var(--muted); }
+  .chip.warn { background: var(--warn-bg); color: var(--warn-text); border-color: transparent; }
+  .chip.ok { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
+  .empty-card { text-align: center; padding: 32px 16px; }
+  .empty-card p { max-width: 520px; margin: 8px auto 16px; }
+
+  /* ---- صفحه‌ی برنامه ---- */
+  .back { display: inline-block; margin-bottom: 10px; text-decoration: none; font-weight: 600; }
+  .title-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
+  .head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dir { direction: ltr; text-align: left; font-size: .85rem; color: var(--muted); overflow-wrap: anywhere; }
+  .time { direction: ltr; unicode-bidi: isolate; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .links { display: flex; gap: 14px; flex-wrap: wrap; font-size: .95rem; margin-top: 8px; width: 100%; }
+
+  .tabs { display: flex; gap: 6px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin: 14px 0 16px; }
+  .tab { background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 14px; color: var(--muted); font-weight: 700; }
+  .tab[aria-selected=true] { color: var(--accent); border-bottom-color: var(--accent); }
+
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 12px; }
+  .stat { background: var(--bg); border-radius: 10px; padding: 8px 12px; }
+  .stat > span { display: block; font-size: .85rem; color: var(--muted); }
+  .stat b { font-size: 1.15rem; }
+  .bar { height: 14px; border-radius: 99px; background: var(--line); overflow: hidden; margin: 6px 0 14px; }
+  .bar > i { display: block; height: 100%; background: var(--ok); transition: width .25s; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+
+  .day { border: 1px solid var(--line); border-radius: 12px; margin-bottom: 10px; background: var(--card); overflow: hidden; }
+  .day.current { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .day.done { border-color: var(--ok); }
+  .day-head { display: flex; gap: 12px; align-items: center; padding: 2px 14px; }
+  .day-title { flex: 1; display: flex; gap: 10px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+               background: none; border: 0; color: inherit; text-align: start; padding: 10px 0; min-height: 50px; }
+  .day-name { font-weight: 800; }
+  .badge { font-size: .8rem; background: var(--accent); color: var(--accent-text); border-radius: 99px; padding: 0 10px; margin-inline-start: 8px; }
+  .day.done .day-name::after { content: " ✓"; color: var(--ok); }
+  .over { color: var(--warn-text); }
+  .chev { color: var(--muted); }
+  .vids { list-style: none; margin: 0; padding: 0; }
+  .vid label { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; }
+  .vid:hover label { background: var(--bg); }
+  .vname { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  .vdir { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
+  .vfile { font-weight: 700; overflow-wrap: anywhere; }
+  .vid.done .vfile { text-decoration: line-through; color: var(--muted); font-weight: 500; }
+
+  details.node { margin: 4px 0; }
+  details.node > summary { cursor: pointer; padding: 6px 4px; font-weight: 700; display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; }
+  details.node > summary .muted { font-weight: 500; }
+  .nbody { margin-inline-start: 16px; padding-inline-start: 12px; border-inline-start: 2px solid var(--line); }
+  .vrow { display: flex; justify-content: space-between; gap: 10px; padding: 4px 4px; border-bottom: 1px dashed var(--line); }
+  .vrow span:first-child { overflow-wrap: anywhere; }
+
+  table.kv { border-collapse: collapse; width: 100%; margin: 10px 0; }
+  table.kv th, table.kv td { text-align: start; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  table.kv th { color: var(--muted); font-weight: 600; width: 55%; }
+  .empty { text-align: center; padding: 24px 8px; color: var(--muted); }
+  .preview { background: var(--bg); border-radius: 10px; padding: 8px 12px; margin: 12px 0; min-height: 44px; }
+
+  /* ---- دیالوگ‌ها ---- */
+  dialog { border: 1px solid var(--line); border-radius: 16px; padding: 0; background: var(--card); color: var(--text);
+           width: min(540px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto; }
+  dialog::backdrop { background: rgba(10, 14, 24, .55); }
+  .dlg { padding: 20px; }
+  .dlg h2 { margin: 0 0 12px; font-size: 1.25rem; }
+  .dlg .field { margin-bottom: 2px; }
+  .dlg-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .dlg-actions .spacer { flex: 1; }
+  .field-err { color: var(--err-text); font-size: .9rem; margin: 4px 0 8px; font-weight: 600; }
+  .field-err:empty, .hint:empty { display: none; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><a class="brand" href="#/programs">پلنر دوره آموزشی</a></h1>
+
+  <!-- ===== فهرست و مدیریت برنامه‌ها ===== -->
+  <section id="view-list" hidden>
+    <div class="page-head">
+      <h2>برنامه‌های من</h2>
+      <button class="btn" type="button" id="btnNew">＋ برنامه‌ی جدید</button>
+    </div>
+    <input type="search" id="searchInput" class="search" placeholder="جست‌وجو در نام یا مسیر برنامه‌ها…" aria-label="جست‌وجو در برنامه‌ها" autocomplete="off" hidden>
+    <div id="listBody"></div>
+  </section>
+
+  <!-- ===== صفحه‌ی یک برنامه ===== -->
+  <section id="view-program" hidden>
+    <a class="back" href="#/programs">→ همه‌ی برنامه‌ها</a>
+    <div class="card">
+      <div class="title-row">
+        <div>
+          <h2 id="courseTitle" style="margin:0" dir="auto"></h2>
+          <div class="dir" id="courseDir"></div>
+        </div>
+        <div class="head-actions">
+          <button class="btn secondary" type="button" id="btnEdit">ویرایش</button>
+          <button class="btn secondary" type="button" id="btnRescan">اسکن مجدد</button>
+        </div>
+        <div class="links" id="courseLinks"></div>
+      </div>
+      <p class="notice" id="dirWarn" style="margin:12px 0 0" hidden>این پوشه روی این کامپیوتر پیدا نشد. اگر جابه‌جا یا تغییر نام داده شده، مسیر را در «ویرایش» اصلاح کنید. چک‌لیست همچنان کار می‌کند.</p>
+      <div class="tabs" role="tablist" aria-label="بخش‌ها">
+        <button class="tab" role="tab" id="tab-checklist" data-tab="checklist">چک‌لیست روزانه</button>
+        <button class="tab" role="tab" id="tab-plan" data-tab="plan">برنامه‌ریزی</button>
+        <button class="tab" role="tab" id="tab-structure" data-tab="structure">ساختار و زمان‌ها</button>
+      </div>
+      <div id="panel-checklist" role="tabpanel" aria-labelledby="tab-checklist"></div>
+      <div id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden></div>
+      <div id="panel-structure" role="tabpanel" aria-labelledby="tab-structure" hidden></div>
+    </div>
+  </section>
+</div>
+
+<!-- ===== دیالوگ ساخت / ویرایش برنامه ===== -->
+<dialog id="pDialog" aria-labelledby="pdTitle">
+  <form id="pForm" class="dlg" novalidate>
+    <h2 id="pdTitle"></h2>
+    <fieldset id="pdFields">
+      <label class="field">نام برنامه
+        <input type="text" id="pdName" dir="auto" maxlength="80" autocomplete="off" aria-describedby="pdNameHint pdNameErr">
+      </label>
+      <p class="hint" id="pdNameHint"></p>
+      <p class="field-err" id="pdNameErr" role="alert"></p>
+
+      <label class="field">مسیر پوشه‌ی دوره
+        <input type="text" id="pdDir" class="ltr" placeholder="C:\Courses\Python   یا   /home/me/Courses/Python"
+               autocomplete="off" spellcheck="false" aria-describedby="pdDirHint pdSameDir pdDirErr">
+      </label>
+      <p class="hint" id="pdDirHint"></p>
+      <p class="hint" id="pdSameDir"></p>
+      <p class="field-err" id="pdDirErr" role="alert"></p>
+    </fieldset>
+    <p class="field-err" id="pdFormErr" role="alert"></p>
+    <p class="muted" id="pdStatus" role="status" style="margin:8px 0 0"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="submit" id="pdSubmit"></button>
+      <button class="btn secondary" type="button" id="pdCancel">انصراف</button>
+      <span class="spacer"></span>
+      <button class="btn-text danger-text" type="button" id="pdDelete">حذف برنامه</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== دیالوگ تأیید حذف ===== -->
+<dialog id="delDialog" aria-labelledby="delTitle">
+  <form method="dialog" class="dlg">
+    <h2 id="delTitle"></h2>
+    <p id="delText"></p>
+    <p class="muted">ویدیوها و فایل‌های روی کامپیوتر شما دست‌نخورده می‌مانند؛ فقط برنامه، گزارش اسکن و تیک‌های پیشرفت حذف می‌شوند. بلافاصله بعد از حذف می‌توانید آن را بازگردانی کنید.</p>
+    <div class="dlg-actions">
+      <button class="btn danger" value="delete">حذف برنامه</button>
+      <button class="btn secondary" value="cancel" autofocus>انصراف</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast info" role="alert" aria-live="assertive" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+const $ = (sel, root = document) => root.querySelector(sel);
+
+/* ساخت عنصر DOM به‌صورت امن (همه‌ی متن‌ها با textContent، نه innerHTML) */
+function el(tag, props = {}, ...kids) {
+  const n = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (v === false || v == null) continue;
+    if (k === 'class') n.className = v;
+    else if (k === 'text') n.textContent = v;
+    else if (k.startsWith('on')) n.addEventListener(k.slice(2), v);
+    else if (v === true) n.setAttribute(k, '');
+    else n.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) {
+    if (kid == null || kid === false) continue;
+    n.append(kid.nodeType ? kid : document.createTextNode(String(kid)));
+  }
+  return n;
+}
+
+const state = {
+  view: 'list', programs: [], filter: '',
+  id: null, prog: null, report: null, plan: null, planMatches: null,
+  tab: 'checklist', openDays: new Set(), pendingTab: null,
+};
+let navToken = 0;
+const enc = encodeURIComponent;
+
+/* ---------- زمان ---------- */
+const msOf = info => info ? Math.round(info.total_seconds * 1000) : 0;
+const p2 = n => String(n).padStart(2, '0');
+function fmt(ms) {
+  const t = Math.floor(ms / 1000 + 0.5);
+  return [Math.floor(t / 3600), Math.floor((t % 3600) / 60), t % 60].map(p2).join(':');
+}
+function fmtShort(ms) {                      // 12:30 یا 1:05:00
+  const t = Math.floor(ms / 1000 + 0.5);
+  const h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60), s = t % 60;
+  return h ? `${h}:${p2(m)}:${p2(s)}` : `${p2(m)}:${p2(s)}`;
+}
+const words = i => `${i.hours} ساعت و ${i.minutes} دقیقه و ${i.seconds} ثانیه`;
+const timeSpan = text => el('span', { class: 'time', text });
+const dayMsOf = d => d.videos.reduce((a, v) => a + msOf(v.duration), 0);
+const num = (input, fallback = 0) => { const v = parseInt(input.value, 10); return Number.isNaN(v) ? fallback : v; };
+
+/* ---------- پیام ---------- */
+let toastTimer;
+function hideToast() { clearTimeout(toastTimer); $('#toast').hidden = true; }
+function toast(msg, kind = 'info', action = null) {
+  const t = $('#toast');
+  t.replaceChildren(el('span', { text: msg }));
+  if (action) t.append(el('button', { class: 'toast-btn', type: 'button', text: action.label,
+    onclick: () => { hideToast(); action.run(); } }));
+  t.className = 'toast ' + kind;
+  t.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(hideToast, action ? 12000 : kind === 'error' ? 9000 : 4000);
+}
+
+/* ---------- ارتباط با سرور ---------- */
+async function api(url, opts = {}) {
+  const init = { method: opts.method || 'GET' };
+  if (opts.body !== undefined) {
+    init.headers = { 'Content-Type': 'application/json' };
+    init.body = JSON.stringify(opts.body);
+  }
+  let res;
+  try { res = await fetch(url, init); }
+  catch (e) { throw new Error('ارتباط با سرور برقرار نشد. مطمئن شوید برنامه (python app.py) هنوز در ترمینال اجراست.'); }
+  let data = null;
+  try { data = await res.json(); } catch (e) { /* بدنه‌ی خالی */ }
+  if (!res.ok) {
+    let msg = res.statusText || 'خطا';
+    if (data && data.detail) msg = typeof data.detail === 'string' ? data.detail : 'ورودی نامعتبر است.';
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
+
+/* ---------- آخرین برنامه‌ی باز‌شده (فقط برای راحتی) ---------- */
+function remember(id) { try { localStorage.setItem('lastProgram', id); } catch (e) {} }
+function recall() { try { return localStorage.getItem('lastProgram'); } catch (e) { return null; } }
+function forget() { try { localStorage.removeItem('lastProgram'); } catch (e) {} }
+
+/* ---------- مسیریابی (با #) ---------- */
+function navigate(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+
+function route() {
+  const m = location.hash.match(/^#\/p\/([^/?#]+)/);
+  if (m) {
+    let id;
+    try { id = decodeURIComponent(m[1]); } catch (e) { return showList(); }
+    return showProgram(id);
+  }
+  return showList();
+}
+
+async function refreshPrograms() { state.programs = await api('/api/programs'); }
+
+async function showList() {
+  const my = ++navToken;
+  try { await refreshPrograms(); } catch (err) { toast(err.message, 'error'); }
+  if (my !== navToken) return;
+  state.view = 'list'; state.id = null;
+  $('#view-program').hidden = true;
+  $('#view-list').hidden = false;
+  document.title = 'پلنر دوره آموزشی';
+  renderList();
+}
+
+/* keep=true: همان تب و روزهای بازشده حفظ شود (بعد از ویرایش/اسکن مجدد) */
+async function showProgram(id, keep = false) {
+  const my = ++navToken;
+  let data;
+  try { data = await api('/api/programs/' + enc(id)); }
+  catch (err) {
+    if (my !== navToken) return;
+    toast(err.message, 'error');
+    history.replaceState(null, '', '#/programs');
+    return showList();
+  }
+  if (my !== navToken) return;
+  const same = keep && state.id === id;
+  state.view = 'program'; state.id = id;
+  state.prog = data.program; state.report = data.report; state.plan = data.plan;
+  state.planMatches = data.plan_matches_report;
+  if (!same) {
+    state.tab = state.pendingTab || (state.plan ? 'checklist' : state.report ? 'plan' : 'structure');
+    state.openDays = new Set();
+    const cur = currentDay();
+    if (cur != null) state.openDays.add(cur);
+  } else if (!state.plan && state.tab === 'checklist') {
+    state.tab = 'plan';
+  }
+  state.pendingTab = null;
+  remember(id);
+  $('#view-list').hidden = true;
+  $('#view-program').hidden = false;
+  document.title = `${state.prog.name} — پلنر دوره آموزشی`;
+  render();
+  if (!same) window.scrollTo(0, 0);
+}
+
+function currentDay() {
+  if (!state.plan) return null;
+  const done = new Set(state.plan.completed || []);
+  const d = state.plan.days.find(day => day.videos.some(v => !done.has(v.path)));
+  return d ? d.day : null;
+}
+
+/* ===================================================================
+   فهرست برنامه‌ها
+   =================================================================== */
+function renderList() {
+  const box = $('#listBody');
+  box.replaceChildren();
+  const all = state.programs;
+  const search = $('#searchInput');
+  search.hidden = all.length < 6;
+
+  if (!all.length) {
+    box.append(el('div', { class: 'card empty-card' },
+      el('h3', { text: 'هنوز برنامه‌ای نساخته‌اید' }),
+      el('p', { class: 'muted', text: 'هر برنامه یک اسم دارد و به یک پوشه‌ی دوره وصل است. زمان ویدیوها محاسبه می‌شود و می‌توانید برنامه‌ی روزانه و چک‌لیست پیشرفت داشته باشید.' }),
+      el('button', { class: 'btn', type: 'button', text: 'ساخت اولین برنامه', onclick: () => openProgramDialog(null) })));
+    return;
+  }
+  const q = search.hidden ? '' : state.filter.trim().toLowerCase();
+  const shown = q ? all.filter(p => `${p.name} ${p.directory}`.toLowerCase().includes(q)) : all;
+  if (!shown.length) { box.append(el('p', { class: 'empty', text: 'برنامه‌ای با این عبارت پیدا نشد.' })); return; }
+  box.append(el('div', { class: 'pgrid' }, shown.map(programCard)));
+}
+
+function programCard(p) {
+  const pl = p.plan;
+  const complete = !!pl && pl.total_videos > 0 && pl.done_videos >= pl.total_videos;
+  const label = !pl ? 'ساخت برنامه‌ی روزانه' : complete ? 'مشاهده' : 'ادامه‌ی تماشا';
+
+  const chips = el('div', { class: 'chips' });
+  if (!p.directory_exists) chips.append(el('span', { class: 'chip warn', text: 'پوشه پیدا نشد' }));
+  if (!pl) {
+    chips.append(el('span', { class: 'chip', text: `${p.video_count} ویدیو · بدون برنامه‌ی روزانه` }));
+  } else {
+    chips.append(el('span', { class: 'chip' }, 'روزانه ', timeSpan(pl.daily_time)));
+    if (pl.grace_minutes) chips.append(el('span', { class: 'chip', text: `انعطاف ${pl.grace_minutes} دقیقه` }));
+    if (p.plan_matches_report === false) chips.append(el('span', { class: 'chip warn', text: 'نیاز به بازسازی' }));
+    if (complete) chips.append(el('span', { class: 'chip ok', text: 'تمام شد ✓' }));
+  }
+
+  return el('article', { class: 'pcard' },
+    el('div', {},
+      el('h3', { dir: 'auto', text: p.name }),
+      el('div', { class: 'dir', text: p.directory || '—' })),
+    pl ? el('div', {},
+      el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100',
+                  'aria-valuenow': String(Math.round(pl.progress_pct)), 'aria-label': 'پیشرفت' },
+        el('i', { style: `width:${pl.progress_pct.toFixed(1)}%` })),
+      el('div', { class: 'pmeta' },
+        el('b', { text: `${Math.round(pl.progress_pct)}٪` }),
+        el('span', { class: 'muted', text: `${pl.done_videos} از ${pl.total_videos} ویدیو` }),
+        el('span', { class: 'muted', text: pl.current_day ? `روز ${pl.current_day} از ${pl.total_days}` : `${pl.total_days} روز` })))
+      : null,
+    chips,
+    el('div', { class: 'pactions' },
+      el('a', { class: 'btn open', href: `#/p/${enc(p.id)}`, text: label }),
+      el('button', { class: 'btn-text', type: 'button', text: 'ویرایش', 'aria-label': `ویرایش برنامه‌ی ${p.name}`,
+                     onclick: () => openProgramDialog(p) }),
+      el('button', { class: 'btn-text danger-text', type: 'button', text: 'حذف', 'aria-label': `حذف برنامه‌ی ${p.name}`,
+                     onclick: () => deleteProgram(p) })));
+}
+
+/* ===================================================================
+   دیالوگ ساخت / ویرایش
+   =================================================================== */
+const pd = {
+  dlg: $('#pDialog'), form: $('#pForm'), fields: $('#pdFields'), title: $('#pdTitle'),
+  name: $('#pdName'), dir: $('#pdDir'), nameHint: $('#pdNameHint'), nameErr: $('#pdNameErr'),
+  dirHint: $('#pdDirHint'), sameDir: $('#pdSameDir'), dirErr: $('#pdDirErr'),
+  formErr: $('#pdFormErr'), status: $('#pdStatus'),
+  submit: $('#pdSubmit'), cancel: $('#pdCancel'), del: $('#pdDelete'),
+};
+let editing = null, busy = false;
+
+const baseName = d => d.trim().replace(/^["']|["']$/g, '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
+const normDir = d => d.trim().replace(/^["']|["']$/g, '').replace(/[\\/]+$/, '').toLowerCase();
+
+function clearErrors() {
+  for (const e of [pd.nameErr, pd.dirErr, pd.formErr]) e.textContent = '';
+  pd.name.removeAttribute('aria-invalid');
+  pd.dir.removeAttribute('aria-invalid');
+}
+function fieldError(input, box, msg) {
+  box.textContent = msg;
+  input.setAttribute('aria-invalid', 'true');
+}
+function updateDirHints() {
+  const dir = pd.dir.value;
+  if (!editing) pd.name.placeholder = baseName(dir) || 'مثلاً دوره‌ی پایتون';
+  const changed = editing && normDir(dir) && normDir(dir) !== normDir(editing.directory);
+  pd.dirHint.textContent = changed
+    ? 'با ذخیره، پوشه‌ی جدید دوباره اسکن می‌شود. اگر نام پوشه‌ی دوره عوض شده باشد، تیک‌ها با مسیر داخل دوره حفظ می‌مانند.'
+    : 'مرورگر نمی‌تواند پوشه را انتخاب کند؛ مسیر را کپی و جای‌گذاری کنید (ویندوز: Shift + راست‌کلیک روی پوشه ← Copy as path).';
+  const other = normDir(dir) && state.programs.find(p => p.id !== (editing && editing.id) && normDir(p.directory) === normDir(dir));
+  pd.sameDir.textContent = other ? `برنامه‌ی «${other.name}» هم از همین پوشه استفاده می‌کند. مشکلی نیست؛ تیک‌های هر برنامه جداست.` : '';
+}
+pd.dir.addEventListener('input', updateDirHints);
+
+function setBusy(on, scanning) {
+  busy = on;
+  pd.fields.disabled = on;
+  pd.submit.disabled = on; pd.cancel.disabled = on; pd.del.disabled = on;
+  pd.status.replaceChildren();
+  if (on) pd.status.append(el('span', { class: 'spin', 'aria-hidden': 'true' }),
+    scanning ? 'در حال اسکن ویدیوها… بسته به تعداد ویدیوها ممکن است چند ثانیه طول بکشد.' : 'در حال ذخیره…');
+}
+
+function openProgramDialog(p) {
+  editing = p;
+  clearErrors();
+  pd.title.textContent = p ? 'ویرایش برنامه' : 'برنامه‌ی جدید';
+  pd.name.value = p ? p.name : '';
+  pd.dir.value = p ? p.directory : '';
+  pd.nameHint.textContent = p ? '' : 'اختیاری؛ اگر خالی بماند، نام پوشه به‌عنوان نام برنامه ذخیره می‌شود.';
+  pd.submit.textContent = p ? 'ذخیره' : 'اسکن و ساخت برنامه';
+  pd.del.hidden = !p;
+  updateDirHints();
+  pd.dlg.showModal();
+  pd.name.focus();
+  if (p) pd.name.select();
+}
+
+pd.dlg.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
+pd.cancel.addEventListener('click', () => pd.dlg.close());
+pd.del.addEventListener('click', () => { const p = editing; pd.dlg.close(); if (p) deleteProgram(p); });
+
+pd.form.addEventListener('submit', async e => {
+  e.preventDefault();
+  if (busy) return;
+  clearErrors();
+  const name = pd.name.value.trim().replace(/\s+/g, ' ');
+  const dir = pd.dir.value.trim();
+  if (editing && !name) { fieldError(pd.name, pd.nameErr, 'نام برنامه نمی‌تواند خالی باشد.'); pd.name.focus(); return; }
+  if (!dir) { fieldError(pd.dir, pd.dirErr, 'مسیر پوشه را وارد کنید.'); pd.dir.focus(); return; }
+
+  let body, scanning;
+  if (editing) {
+    body = {};
+    if (name !== editing.name) body.name = name;
+    if (normDir(dir) !== normDir(editing.directory)) body.directory = dir;
+    if (!Object.keys(body).length) { pd.dlg.close(); return; }
+    scanning = 'directory' in body;
+  } else {
+    body = { name, directory: dir };
+    scanning = true;
+  }
+
+  const target = editing;
+  setBusy(true, scanning);
+  try {
+    const res = target
+      ? await api('/api/programs/' + enc(target.id), { method: 'PATCH', body })
+      : await api('/api/programs', { method: 'POST', body });
+    setBusy(false);
+    pd.dlg.close();
+    await refreshPrograms();
+    if (target) {
+      let msg = scanning ? `ذخیره و اسکن شد (${res.video_count} ویدیو).` : 'تغییرات ذخیره شد.';
+      if (res.failed) msg += ` ${res.failed} فایل خوانده نشد.`;
+      if (state.view === 'program' && state.id === target.id) await showProgram(target.id, true);
+      else renderList();
+      if (scanning && state.view === 'program' && state.planMatches === false) msg += ' ویدیوها با برنامه‌ی فعلی هم‌خوان نیست.';
+      toast(msg, 'ok');
+    } else {
+      state.pendingTab = 'plan';
+      navigate('#/p/' + enc(res.id));
+      toast(`اسکن انجام شد (${res.video_count} ویدیو)${res.failed ? `؛ ${res.failed} فایل خوانده نشد` : ''}. حالا برنامه‌ی روزانه را بسازید.`, res.failed ? 'info' : 'ok');
+    }
+  } catch (err) {
+    setBusy(false);
+    if (err.status === 409) { fieldError(pd.name, pd.nameErr, err.message); pd.name.focus(); }
+    else { pd.formErr.textContent = err.message; }
+  }
+});
+
+/* ===================================================================
+   حذف (با تأیید + امکان بازگردانی)
+   =================================================================== */
+const del = { dlg: $('#delDialog') };
+del.dlg.addEventListener('click', e => { if (e.target === del.dlg) del.dlg.close('cancel'); });
+
+function confirmDelete(p) {
+  return new Promise(resolve => {
+    $('#delTitle').textContent = `حذف «${p.name}»؟`;
+    const pl = p.plan;
+    $('#delText').textContent = pl && pl.done_videos
+      ? `${pl.done_videos} از ${pl.total_videos} ویدیو در این برنامه تیک خورده است.`
+      : 'این برنامه هنوز تیکی ندارد.';
+    del.dlg.returnValue = '';
+    del.dlg.addEventListener('close', () => resolve(del.dlg.returnValue === 'delete'), { once: true });
+    del.dlg.showModal();
+  });
+}
+
+async function deleteProgram(p) {
+  if (!(await confirmDelete(p))) return;
+  try { await api('/api/programs/' + enc(p.id), { method: 'DELETE' }); }
+  catch (err) { toast(err.message, 'error'); return; }
+  if (recall() === p.id) forget();
+  if (state.view === 'program' && state.id === p.id) navigate('#/programs');
+  else { try { await refreshPrograms(); } catch (e) { /* ignore */ } renderList(); }
+  toast(`برنامه‌ی «${p.name}» حذف شد.`, 'info', { label: 'بازگردانی', run: () => restoreProgram(p) });
+}
+
+async function restoreProgram(p) {
+  try {
+    await api(`/api/programs/${enc(p.id)}/restore`, { method: 'POST' });
+    await refreshPrograms();
+    if (state.view === 'list') renderList();
+    toast(`برنامه‌ی «${p.name}» بازگردانی شد.`, 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* ===================================================================
+   صفحه‌ی برنامه
+   =================================================================== */
+function render() {
+  renderHeader();
+  renderTabs();
+  renderChecklist();
+  renderPlanner();
+  renderStructure();
+}
+
+function renderHeader() {
+  const p = state.prog;
+  $('#courseTitle').textContent = p.name;
+  $('#courseDir').textContent = p.directory || '';
+  $('#dirWarn').hidden = p.directory_exists || !p.directory;
+  $('#btnRescan').disabled = !p.directory;
+  const links = $('#courseLinks');
+  links.replaceChildren();
+  if (state.report) links.append(el('a', { href: `/api/programs/${enc(state.id)}/download/report`, text: 'دانلود JSON گزارش' }));
+  if (state.plan) links.append(el('a', { href: `/api/programs/${enc(state.id)}/download/plan`, text: 'دانلود JSON برنامه' }));
+}
+
+function renderTabs() {
+  for (const b of document.querySelectorAll('.tab')) {
+    const on = b.dataset.tab === state.tab;
+    b.setAttribute('aria-selected', on ? 'true' : 'false');
+    $('#panel-' + b.dataset.tab).hidden = !on;
+  }
+}
+
+async function rescan() {
+  const btn = $('#btnRescan');
+  const label = btn.textContent;
+  btn.disabled = true;
+  btn.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }), 'در حال اسکن…');
+  try {
+    const res = await api('/api/programs/' + enc(state.id), { method: 'PATCH', body: { rescan: true } });
+    await showProgram(state.id, true);
+    let msg = `اسکن مجدد انجام شد (${res.video_count} ویدیو).`;
+    if (res.failed) msg += ` ${res.failed} فایل خوانده نشد.`;
+    if (state.planMatches === false) msg += ' ویدیوها با برنامه‌ی فعلی هم‌خوان نیست.';
+    toast(msg, res.failed || state.planMatches === false ? 'info' : 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+  finally { btn.textContent = label; btn.disabled = !state.prog.directory; }
+}
+
+async function rebuildSamePlan() {
+  const pl = state.plan;
+  try {
+    state.plan = await api(`/api/programs/${enc(state.id)}/plan`, { method: 'POST', body: {
+      hours: Math.floor(pl.daily_minutes / 60), minutes: pl.daily_minutes % 60,
+      grace_minutes: pl.grace_minutes || 0, keep_progress: true } });
+    await showProgram(state.id, true);
+    toast('برنامه با ویدیوهای جدید بازسازی شد و تیک‌ها حفظ شدند.', 'ok');
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* ===== تب چک‌لیست ===== */
+function renderChecklist() {
+  const box = $('#panel-checklist');
+  box.replaceChildren();
+  const plan = state.plan;
+  if (!plan) {
+    box.append(el('div', { class: 'empty' },
+      el('p', { text: 'هنوز برنامه‌ی روزانه‌ای برای این برنامه ساخته نشده است.' }),
+      el('button', { class: 'btn', type: 'button', text: 'رفتن به برنامه‌ریزی', onclick: () => { state.tab = 'plan'; renderTabs(); } })));
+    return;
+  }
+  if (state.planMatches === false) {
+    box.append(el('div', { class: 'notice' },
+      el('p', { text: 'ویدیوهای این برنامه با آخرین اسکن پوشه یکی نیست (ویدیو اضافه یا حذف شده).' }),
+      el('button', { class: 'btn secondary', type: 'button', text: 'بازسازی با همان تنظیمات (تیک‌ها حفظ می‌شود)', onclick: rebuildSamePlan })));
+  }
+
+  const done = new Set(plan.completed || []);
+  let totalMs = 0, doneMs = 0, nVid = 0, nDone = 0, daysDone = 0;
+  for (const d of plan.days) {
+    let all = true;
+    for (const v of d.videos) {
+      const ms = msOf(v.duration);
+      totalMs += ms; nVid++;
+      if (done.has(v.path)) { doneMs += ms; nDone++; } else all = false;
+    }
+    if (all) daysDone++;
+  }
+  const pct = totalMs ? (100 * doneMs / totalMs) : (nVid ? 100 * nDone / nVid : 0);
+  const cur = currentDay();
+
+  box.append(
+    el('div', { class: 'stats' },
+      stat('ویدیوها', `${nDone} از ${nVid}`),
+      stat('روزها', `${daysDone} از ${plan.days.length}`),
+      stat('تماشا شده', fmt(doneMs), true),
+      stat('باقی‌مانده', fmt(totalMs - doneMs), true),
+      stat('زمان روزانه', plan.daily_time, true)),
+    el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100',
+                'aria-valuenow': String(Math.round(pct)), 'aria-label': 'درصد پیشرفت' },
+      el('i', { style: `width:${pct.toFixed(1)}%` })),
+    el('p', { class: 'muted', text: `پیشرفت: ${pct.toFixed(1)}٪` }),
+    el('div', { class: 'toolbar' },
+      el('button', { class: 'btn secondary', type: 'button', text: 'رفتن به روز جاری', onclick: () => {
+        state.openDays = new Set(cur != null ? [cur] : []);
+        renderChecklist();
+        const node = document.getElementById('day-' + cur);
+        if (node) node.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      } }),
+      el('button', { class: 'btn secondary', type: 'button', text: 'باز کردن همه', onclick: () => {
+        state.openDays = new Set(plan.days.map(d => d.day)); renderChecklist(); } }),
+      el('button', { class: 'btn secondary', type: 'button', text: 'بستن همه', onclick: () => {
+        state.openDays = new Set(); renderChecklist(); } })));
+
+  if (cur == null) box.append(el('div', { class: 'notice', style: 'background:var(--ok-bg);color:var(--ok)', text: 'همه‌ی روزها تمام شده است. خسته نباشید!' }));
+
+  for (const d of plan.days) box.append(dayCard(d, done, cur));
+}
+
+function stat(label, value, isTime) {
+  return el('div', { class: 'stat' }, el('span', { text: label }),
+    el('b', {}, isTime ? timeSpan(value) : value));
+}
+
+function dayCard(d, done, cur) {
+  const doneCount = d.videos.filter(v => done.has(v.path)).length;
+  const all = doneCount === d.videos.length;
+  const open = state.openDays.has(d.day);
+  const dayMs = dayMsOf(d);
+  const over = dayMs - state.plan.daily_minutes * 60000;
+
+  const cb = el('input', { type: 'checkbox', 'aria-label': `تیک کل روز ${d.day}` });
+  cb.checked = all;
+  cb.indeterminate = !all && doneCount > 0;
+  cb.addEventListener('change', () => setDone(d.videos.map(v => v.path), cb.checked));
+
+  const list = el('ul', { class: 'vids', id: `vids-${d.day}` });
+  list.hidden = !open;
+  for (const v of d.videos) list.append(videoRow(v, done.has(v.path)));
+
+  const head = el('button', { class: 'day-title', type: 'button', 'aria-expanded': open ? 'true' : 'false',
+    'aria-controls': `vids-${d.day}`,
+    onclick: () => {
+      if (state.openDays.has(d.day)) state.openDays.delete(d.day); else state.openDays.add(d.day);
+      renderChecklist();
+    } },
+    el('span', {}, el('span', { class: 'day-name', text: `روز ${d.day}` }),
+      d.day === cur ? el('span', { class: 'badge', text: 'روز جاری' }) : null),
+    el('span', { class: 'muted' }, `${doneCount} از ${d.videos.length} ویدیو · `, timeSpan(fmt(dayMs)),
+      over > 1000 ? [' · ', el('span', { class: 'over', title: 'بیشتر از زمان روزانه' }, timeSpan('+' + fmtShort(over)), ' اضافه')] : null),
+    el('span', { class: 'chev', 'aria-hidden': 'true', text: open ? '▴' : '▾' }));
+
+  return el('div', { class: 'day' + (all ? ' done' : '') + (d.day === cur ? ' current' : ''), id: `day-${d.day}` },
+    el('div', { class: 'day-head' }, cb, head), list);
+}
+
+function videoRow(v, isDone) {
+  const parts = v.path.split('/');
+  const dir = parts.slice(1, -1).join(' / ');   // بدون نام ریشه‌ی دوره و بدون نام فایل
+  const cb = el('input', { type: 'checkbox' });
+  cb.checked = isDone;
+  cb.addEventListener('change', () => setDone([v.path], cb.checked));
+  return el('li', { class: 'vid' + (isDone ? ' done' : '') },
+    el('label', {}, cb,
+      el('span', { class: 'vname' },
+        dir ? el('span', { class: 'vdir', dir: 'auto', text: dir }) : null,
+        el('span', { class: 'vfile', dir: 'auto', text: v.name })),
+      timeSpan(v.duration ? v.duration.text : '??:??:??')));
+}
+
+/* تیک‌زدن: اول در صفحه، بعد در فایل JSON روی سرور */
+async function setDone(paths, done) {
+  const s = new Set(state.plan.completed || []);
+  for (const p of paths) { if (done) s.add(p); else s.delete(p); }
+  state.plan.completed = [...s];
+  renderChecklist();
+  try {
+    await api(`/api/programs/${enc(state.id)}/progress`, { method: 'POST', body: { paths, done } });
+  } catch (err) {
+    toast('ذخیره نشد: ' + err.message, 'error');
+    try { await showProgram(state.id, true); } catch (e) { /* ignore */ }
+  }
+}
+
+/* ===== تب برنامه‌ریزی ===== */
+function renderPlanner() {
+  const box = $('#panel-plan');
+  box.replaceChildren();
+  if (!state.report) {
+    box.append(el('p', { class: 'muted', text: 'برای ساخت برنامه، ابتدا باید دوره اسکن شده باشد.' }));
+    return;
+  }
+  const plan = state.plan;
+  const t = state.report.total_duration;
+  const daily = plan ? plan.daily_minutes : 150;
+  const graceVal = plan ? (plan.grace_minutes || 0) : 20;
+
+  box.append(el('p', {}, 'مدت کل دوره: ', el('b', { text: words(t) }), ` (${state.report.video_count} ویدیو)`));
+
+  const hours = el('input', { type: 'number', min: '0', max: '23', value: String(Math.floor(daily / 60)), id: 'hours', inputmode: 'numeric' });
+  const minutes = el('input', { type: 'number', min: '0', max: '59', value: String(daily % 60), id: 'minutes', inputmode: 'numeric' });
+  const grace = el('input', { type: 'number', min: '0', max: '120', value: String(graceVal), id: 'grace', inputmode: 'numeric', 'aria-describedby': 'graceHint' });
+  const preview = el('p', { class: 'preview', 'aria-live': 'polite' });
+  const keep = plan ? el('input', { type: 'checkbox', id: 'keep', checked: true }) : null;
+  if (keep) keep.checked = true;
+
+  const form = el('form', {},
+    el('div', { class: 'row' },
+      el('label', { class: 'field', for: 'hours' }, 'ساعت در روز', hours),
+      el('label', { class: 'field', for: 'minutes' }, 'دقیقه', minutes),
+      el('label', { class: 'field', for: 'grace' }, 'تجاوز مجاز (دقیقه)', grace)),
+    el('p', { class: 'hint', id: 'graceHint', style: 'margin-top:8px',
+      text: 'هر روز می‌تواند تا این مقدار از زمان روزانه بیشتر شود تا ویدیوی بعدی نصف نشود. صفر یعنی هیچ تجاوزی مجاز نیست.' }),
+    preview,
+    el('div', { class: 'row', style: 'align-items:center' },
+      keep ? el('label', { class: 'row', style: 'align-items:center;gap:8px;cursor:pointer', for: 'keep' }, keep, 'تیک‌های قبلی حفظ شود') : null,
+      el('button', { class: 'btn', type: 'submit', text: plan ? 'ساخت برنامه‌ی جدید' : 'ساخت برنامه' })));
+
+  /* پیش‌نمایش زنده (محاسبه روی سرور، بدون ذخیره) */
+  let timer, seq = 0;
+  async function refreshPreview() {
+    const h = num(hours), m = num(minutes), g = num(grace);
+    if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59 && h * 60 + m > 0 && g >= 0 && g <= 120)) {
+      preview.textContent = 'زمان روزانه (و تجاوز مجاز بین ۰ تا ۱۲۰ دقیقه) را درست وارد کنید.';
+      return;
+    }
+    const my = ++seq;
+    try {
+      const r = await api(`/api/programs/${enc(state.id)}/preview?hours=${h}&minutes=${m}&grace=${g}`);
+      if (my !== seq) return;
+      preview.replaceChildren(
+        'با این تنظیمات: ', el('b', { text: `${r.planned_days} روز` }),
+        ' · بلندترین روز ', timeSpan(r.longest_day.text),
+        r.overrun_days ? ` · ${r.overrun_days} روز از زمان روزانه بیشتر می‌شود` : '',
+        g > 0 && r.days_without_grace > r.planned_days ? ` · بدون تجاوز مجاز ${r.days_without_grace} روز می‌شد` : '');
+    } catch (err) { if (my === seq) preview.textContent = ''; }
+  }
+  const schedulePreview = () => { clearTimeout(timer); timer = setTimeout(refreshPreview, 200); };
+  for (const i of [hours, minutes, grace]) i.addEventListener('input', schedulePreview);
+  refreshPreview();
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const h = num(hours), m = num(minutes), g = num(grace);
+    if (!(h >= 0 && h <= 23 && m >= 0 && m <= 59 && h * 60 + m > 0)) {
+      toast('زمان روزانه را درست وارد کنید (ساعت ۰ تا ۲۳، دقیقه ۰ تا ۵۹ و مجموع بیشتر از صفر).', 'error');
+      return;
+    }
+    if (!(g >= 0 && g <= 120)) { toast('تجاوز مجاز باید بین ۰ تا ۱۲۰ دقیقه باشد.', 'error'); return; }
+    const keepIt = keep ? keep.checked : false;
+    if (plan && (plan.completed || []).length && !keepIt &&
+        !confirm('تیک‌های فعلی پاک می‌شوند. ادامه می‌دهید؟')) return;
+    try {
+      state.plan = await api(`/api/programs/${enc(state.id)}/plan`,
+        { method: 'POST', body: { hours: h, minutes: m, grace_minutes: g, keep_progress: keepIt } });
+      state.planMatches = true;
+      state.openDays = new Set();
+      const cur = currentDay();
+      if (cur != null) state.openDays.add(cur);
+      state.tab = 'checklist';
+      render();
+      toast('برنامه ساخته و در فایل JSON ذخیره شد.', 'ok');
+    } catch (err) { toast(err.message, 'error'); }
+  });
+  box.append(form);
+
+  if (plan) {
+    const dailyMs = plan.daily_minutes * 60000;
+    const lens = plan.days.map(dayMsOf);
+    const overDays = lens.filter(x => x > dailyMs).length;
+    box.append(
+      el('h2', { style: 'margin-top:20px', text: 'برنامه‌ی فعلی' }),
+      el('table', { class: 'kv' }, el('tbody', {},
+        kv('زمان روزانه', timeSpan(plan.daily_time)),
+        kv('تجاوز مجاز در هر روز', `${plan.grace_minutes || 0} دقیقه`),
+        kv('بلندترین روز', timeSpan(fmt(Math.max(0, ...lens)))),
+        kv('روزهایی که از زمان روزانه بیشتر شده‌اند', `${overDays} روز`),
+        kv('حداقل تعداد روز (اگر بتوانید وسط ویدیو توقف کنید)', `${plan.min_days_if_split_anywhere} روز`),
+        kv('تعداد روز برنامه (ویدیوها بین دو روز نصف نمی‌شوند)', `${plan.planned_days} روز`))),
+      el('p', { class: 'muted', text:
+        'اگر ویدیوی بعدی در زمان باقی‌مانده‌ی آن روز (به‌علاوه‌ی تجاوز مجاز) جا نشود به روز بعد می‌رود؛ برای همین تعداد روز برنامه ممکن است کمی بیشتر از حداقل باشد.' }));
+  }
+}
+function kv(k, v) { return el('tr', {}, el('th', { text: k }), el('td', {}, v)); }
+
+/* ===== تب ساختار و زمان‌ها ===== */
+function renderStructure() {
+  const box = $('#panel-structure');
+  box.replaceChildren();
+  if (!state.report) {
+    box.append(el('p', { class: 'muted', text: 'گزارش اسکن برای این برنامه موجود نیست.' }));
+    return;
+  }
+  const r = state.report;
+  box.append(el('p', {}, 'مجموع زمان تماشای کل دوره: ', el('b', { text: words(r.total_duration) }),
+    ' ', el('span', { class: 'muted' }, '(', timeSpan(r.total_duration.text), ')')));
+  if (r.failed_files && r.failed_files.length) {
+    box.append(el('div', { class: 'notice' },
+      el('b', { text: 'این فایل‌ها خوانده نشدند (با زمان صفر محاسبه شده‌اند):' }),
+      el('ul', {}, r.failed_files.map(f => el('li', { dir: 'auto', text: f.path })))));
+  }
+  box.append(treeNode(r.tree, true));
+}
+
+function treeNode(node, isRoot) {
+  const d = el('details', { class: 'node' });
+  d.open = isRoot;
+  d.append(el('summary', {},
+    el('span', { dir: 'auto', text: node.name }),
+    el('span', { class: 'muted' }, `${node.video_count} ویدیو · `, timeSpan(node.total_duration.text))));
+  const body = el('div', { class: 'nbody' });
+  for (const v of node.videos) {
+    body.append(el('div', { class: 'vrow' },
+      el('span', { dir: 'auto', text: v.name }),
+      timeSpan(v.duration ? v.duration.text : '??:??:??')));
+  }
+  for (const s of node.subdirectories) body.append(treeNode(s, false));
+  d.append(body);
+  return d;
+}
+
+/* ---------- رویدادها ---------- */
+document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
+  state.tab = b.dataset.tab; renderTabs();
+}));
+$('#btnNew').addEventListener('click', () => openProgramDialog(null));
+$('#btnEdit').addEventListener('click', () => openProgramDialog(state.prog));
+$('#btnRescan').addEventListener('click', rescan);
+$('#searchInput').addEventListener('input', e => { state.filter = e.target.value; renderList(); });
+window.addEventListener('hashchange', route);
+
+/* ---------- شروع ---------- */
+(async function boot() {
+  try { await refreshPrograms(); }
+  catch (err) {
+    $('#listBody').append(el('div', { class: 'notice', text: err.message }));
+    $('#view-list').hidden = false;
+    return;
+  }
+  if (!location.hash) {
+    const last = recall();
+    const target = last && state.programs.some(p => p.id === last) ? '#/p/' + enc(last) : '#/programs';
+    history.replaceState(null, '', target);
+  }
+  route();
+})();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# /opt/ai/projects/course_web/requirements.txt
+
+# پکیج‌های لازم برای برنامه‌ی وب
+fastapi>=0.110
+uvicorn[standard]>=0.29
+
+# برای خواندن مدت ویدیو. اگر ffmpeg (ffprobe) روی سیستم نصب است، از آن استفاده می‌شود؛
+# در غیر این صورت از این پکیج استفاده می‌شود.
+pymediainfo>=6.0
