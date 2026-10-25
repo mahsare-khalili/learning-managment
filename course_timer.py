@@ -2,8 +2,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-course_timer.py
-================
+course_timer.py - rootend (root + tend: مراقبت از ریشه‌ها)
+==========================================================
 محاسبه‌ی زمان کل یک دوره‌ی آموزشی ویدیویی + برنامه‌ریزی روزانه + چک‌لیست ترمینالی
 
 استفاده به‌صورت اسکریپت:
@@ -667,7 +667,7 @@ def main(argv=None) -> int:
         pass
 
     parser = argparse.ArgumentParser(
-        description="Calculate the total duration of a video course, "
+        description="rootend - calculate the total duration of a video course, "
                     "plan study days and track progress with a checklist.")
     parser.add_argument("directory", nargs="?", help="course directory")
     parser.add_argument("-o", "--output",

@@ -1,7 +1,7 @@
 # /opt/ai/projects/course_web/system_tools.py
 # -*- coding: utf-8 -*-
 """
-system_tools.py - کارهایی که با سیستم‌عامل کاربر سروکار دارند
+system_tools.py - rootend: کارهایی که با سیستم‌عامل کاربر سروکار دارند
 
   * انتخاب پوشه: پنجره‌ی بومی سیستم (zenity / kdialog / tkinter / osascript)
     و در صورت نبودن آن‌ها، فهرست‌کردن پوشه‌ها برای «مرورگر پوشه‌ی» داخل برنامه
@@ -311,7 +311,7 @@ def start_player(player: dict, video: str, start: float = 0.0, extra_args: str =
 
     if pid == "mpv":
         token = secrets.token_hex(4)
-        ipc = (r"\\.\pipe\courseplanner-" + token) if os.name == "nt" else f"/tmp/courseplanner-{token}.sock"
+        ipc = (r"\\.\pipe\rootend-" + token) if os.name == "nt" else f"/tmp/rootend-{token}.sock"
         cmd = [exe, f"--input-ipc-server={ipc}"]
         if start >= 1:
             cmd.append(f"--start={int(start)}")

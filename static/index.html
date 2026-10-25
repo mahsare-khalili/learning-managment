@@ -5,7 +5,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>پلنر دوره آموزشی</title>
+<title>rootend</title>
+<link rel="icon" type="image/svg+xml" href="/assets/images/rootend_logo_accurate.svg">
+<link rel="icon" type="image/jpeg" href="/assets/images/rootend_logo_accurate.jpg">
+<link rel="apple-touch-icon" href="/assets/images/rootend_logo_accurate.jpg">
 <style>
   :root {
     --bg: #f4f5f8; --card: #ffffff; --text: #1b2130; --muted: #566074; --line: #d9dee8;
@@ -31,7 +34,13 @@
   h2 { font-size: 1.2rem; margin: 0 0 10px; }
   h3 { font-size: 1.1rem; margin: 0; }
   p { margin: 0 0 10px; }
-  .brand { color: inherit; text-decoration: none; }
+  .brand { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 10px; }
+  .logo { display: block; height: 44px; width: auto; max-width: 100%; border-radius: 8px; }
+  .empty-logo { height: 72px; margin: 0 auto 6px; }
+  /* اگر لوگوی شما فقط آیکون است و نوشته ندارد، در :root بنویسید:  --brand-text: inline-block; */
+  .brand-text { display: var(--brand-text, none); font-weight: 800; letter-spacing: .5px; }
+  /* لوگو در حالت تاریک روی زمینه‌ی روشن می‌نشیند تا با هر رنگی خوانا بماند */
+  @media (prefers-color-scheme: dark) { .logo { background: #fff; padding: 4px 8px; } }
   .muted { color: var(--muted); }
   .hint { color: var(--muted); font-size: .85rem; margin: 4px 0 12px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 16px; }
@@ -197,7 +206,11 @@
 </head>
 <body>
 <div class="wrap">
-  <h1><a class="brand" href="#/programs">پلنر دوره آموزشی</a></h1>
+  <h1><a class="brand" href="#/programs" title="rootend — مراقبت از ریشه‌ها">
+    <img class="logo" src="/assets/images/rootend_logo_accurate.svg" alt="rootend"
+         onerror="this.onerror=null;this.src='/assets/images/rootend_logo_accurate.jpg'">
+    <span class="brand-text">rootend</span>
+  </a></h1>
 
   <!-- ===== فهرست و مدیریت برنامه‌ها ===== -->
   <section id="view-list" hidden>
@@ -464,7 +477,7 @@ async function showList() {
   state.view = 'list'; state.id = null;
   $('#view-program').hidden = true;
   $('#view-list').hidden = false;
-  document.title = 'پلنر دوره آموزشی';
+  document.title = 'rootend';
   renderList();
 }
 
@@ -498,7 +511,7 @@ async function showProgram(id, keep = false) {
   remember(id);
   $('#view-list').hidden = true;
   $('#view-program').hidden = false;
-  document.title = `${state.prog.name} — پلنر دوره آموزشی`;
+  document.title = `${state.prog.name} — rootend`;
   render();
   if (!same) window.scrollTo(0, 0);
   if (state.active.length) startPolling(); else stopPolling();
@@ -523,6 +536,7 @@ function renderList() {
 
   if (!all.length) {
     box.append(el('div', { class: 'card empty-card' },
+      el('img', { class: 'logo empty-logo', src: '/assets/images/rootend_logo_accurate.svg', alt: '' }),
       el('h3', { text: 'هنوز برنامه‌ای نساخته‌اید' }),
       el('p', { class: 'muted', text: 'هر برنامه یک اسم دارد و به یک پوشه‌ی دوره وصل است. زمان ویدیوها محاسبه می‌شود و می‌توانید برنامه‌ی روزانه و چک‌لیست پیشرفت داشته باشید.' }),
       el('button', { class: 'btn', type: 'button', text: 'ساخت اولین برنامه', onclick: () => openProgramDialog(null) })));

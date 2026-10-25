@@ -2,7 +2,7 @@
 
 # -*- coding: utf-8 -*-
 """
-app.py - برنامه‌ی وب (FastAPI) برای پلنر دوره‌ی آموزشی
+app.py - rootend (root + tend: مراقبت از ریشه‌ها)، برنامه‌ی وب FastAPI برای برنامه‌ریزی و پیگیری دوره‌های آموزشی
 
 هر «برنامه» (program) یک اسم دارد و به یک پوشه‌ی دوره وصل است. سه فایل JSON در پوشه‌ی data/:
     <id>_meta.json     نام برنامه، مسیر پوشه، تاریخ ساخت/ویرایش
@@ -33,14 +33,15 @@ from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 import course_timer as ct
 import system_tools as st
 
 BASE_DIR = Path(__file__).resolve().parent
-# اگر فایل‌های JSON شما جای دیگری است، می‌توانید با متغیر محیطی COURSE_DATA_DIR مسیرش را بدهید
-DATA_DIR = Path(os.environ.get("COURSE_DATA_DIR", BASE_DIR / "data")).expanduser().resolve()
+# اگر فایل‌های JSON شما جای دیگری است، می‌توانید با متغیر محیطی ROOTEND_DATA_DIR مسیرش را بدهید
+DATA_DIR = Path(os.environ.get("ROOTEND_DATA_DIR") or os.environ.get("COURSE_DATA_DIR") or BASE_DIR / "data").expanduser().resolve()
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 TRASH_DIR = DATA_DIR / "trash"
 INDEX_HTML = BASE_DIR / "static" / "index.html"
@@ -50,13 +51,18 @@ SETTINGS_FILE = DATA_DIR / "settings.json"
 MAX_NAME = 80
 MAX_GRACE = 120   # بیشترین تجاوز مجاز در روز (دقیقه)
 
-app = FastAPI(title="Course Planner")
+app = FastAPI(title="rootend")
+
+# لوگو و تصویرهای ثابت: assets/images/... از آدرس /assets/images/... در دسترس است
+ASSETS_DIR = BASE_DIR / "assets"
+if ASSETS_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
 
 # چون برنامه می‌تواند پلیر باز کند و پوشه‌ها را فهرست کند، فقط درخواست‌های محلی پذیرفته می‌شود
 # (جلوگیری از سوءاستفاده‌ی صفحه‌های دیگر مرورگر و DNS rebinding).
-# اگر برنامه را با نام دیگری باز می‌کنید: COURSE_ALLOWED_HOSTS=my-host,other-host
+# اگر برنامه را با نام دیگری باز می‌کنید: ROOTEND_ALLOWED_HOSTS=my-host,other-host
 ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"} | {
-    h.strip().lower() for h in os.environ.get("COURSE_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    h.strip().lower() for h in (os.environ.get("ROOTEND_ALLOWED_HOSTS") or os.environ.get("COURSE_ALLOWED_HOSTS") or "").split(",") if h.strip()}
 
 
 @app.middleware("http")
