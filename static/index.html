@@ -130,8 +130,18 @@
   .over { color: var(--warn-text); }
   .chev { color: var(--muted); }
   .vids { list-style: none; margin: 0; padding: 0; }
-  .vid label { display: flex; gap: 12px; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line); cursor: pointer; }
-  .vid:hover label { background: var(--bg); }
+  .vid { display: flex; align-items: stretch; border-top: 1px solid var(--line); }
+  .vid:hover { background: var(--bg); }
+  .vcheck { display: flex; align-items: center; padding: 0 14px; cursor: pointer; }
+  .vplay { flex: 1; min-width: 0; display: flex; gap: 12px; align-items: center; background: none; border: 0;
+           color: inherit; text-align: start; padding: 10px 0; cursor: pointer; }
+  .pico { color: var(--accent); opacity: .5; flex: none; font-size: .9rem; }
+  .vplay:hover .pico, .vplay:focus-visible .pico { opacity: 1; }
+  .vedit { background: none; border: 0; color: var(--muted); padding: 0 14px; min-width: 48px; border-radius: 0; }
+  .vedit:hover { color: var(--accent); }
+  .vpos { font-size: .8rem; color: var(--muted); }
+  .vpos:empty { display: none; }
+  .vpos.live { color: var(--ok); font-weight: 600; }
   .vname { flex: 1; min-width: 0; display: flex; flex-direction: column; }
   .vdir { font-size: .8rem; color: var(--muted); overflow-wrap: anywhere; }
   .vfile { font-weight: 700; overflow-wrap: anywhere; }
@@ -161,6 +171,26 @@
   .dlg-actions .spacer { flex: 1; }
   .field-err { color: var(--err-text); font-size: .9rem; margin: 4px 0 8px; font-weight: 600; }
   .field-err:empty, .hint:empty { display: none; }
+
+  .inline { display: flex; gap: 8px; align-items: stretch; flex-wrap: wrap; }
+  .inline input[type=text] { flex: 1; min-width: 200px; width: auto; }
+  .dlg input[type=text] { width: 100%; }
+  .popt { display: flex; gap: 12px; align-items: center; padding: 8px 12px; border: 1px solid var(--line);
+          border-radius: 10px; margin-bottom: 8px; cursor: pointer; min-height: 48px; }
+  .popt:has(input:checked) { border-color: var(--accent); background: var(--bg); }
+  .popt input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+  .popt > span { display: flex; flex-direction: column; line-height: 1.5; }
+  .popt .muted { font-size: .85rem; }
+  .check-row { display: flex; gap: 10px; align-items: center; cursor: pointer; margin: 12px 0 4px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .fs-list { list-style: none; margin: 10px 0 4px; padding: 0; border: 1px solid var(--line); border-radius: 10px;
+             max-height: min(44vh, 340px); overflow: auto; }
+  .fs-list li + li { border-top: 1px solid var(--line); }
+  .fs-item { display: block; width: 100%; text-align: start; background: none; border: 0; color: inherit;
+             padding: 8px 14px; min-height: 44px; overflow-wrap: anywhere; }
+  .fs-item::before { content: "▸ "; color: var(--muted); }
+  .fs-item:hover { background: var(--bg); }
+  .fs-bar { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
 
   [hidden] { display: none !important; }
 </style>
@@ -218,10 +248,13 @@
       <p class="hint" id="pdNameHint"></p>
       <p class="field-err" id="pdNameErr" role="alert"></p>
 
-      <label class="field">مسیر پوشه‌ی دوره
+      <label class="field" for="pdDir">مسیر پوشه‌ی دوره</label>
+      <div class="inline">
         <input type="text" id="pdDir" class="ltr" placeholder="C:\Courses\Python   یا   /home/me/Courses/Python"
                autocomplete="off" spellcheck="false" aria-describedby="pdDirHint pdSameDir pdDirErr">
-      </label>
+        <button class="btn secondary" type="button" id="pdPick">انتخاب پوشه…</button>
+      </div>
+      <p class="hint" id="pdPickStatus" role="status" style="margin-bottom:0"></p>
       <p class="hint" id="pdDirHint"></p>
       <p class="hint" id="pdSameDir"></p>
       <p class="field-err" id="pdDirErr" role="alert"></p>
@@ -246,6 +279,70 @@
     <div class="dlg-actions">
       <button class="btn danger" value="delete">حذف برنامه</button>
       <button class="btn secondary" value="cancel" autofocus>انصراف</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== مرورگر پوشه‌ی داخل برنامه ===== -->
+<dialog id="fsDialog" aria-labelledby="fsTitle">
+  <div class="dlg">
+    <h2 id="fsTitle">انتخاب پوشه</h2>
+    <form id="fsGo" class="inline">
+      <input type="text" id="fsPath" class="ltr" aria-label="مسیر فعلی" spellcheck="false" autocomplete="off">
+      <button class="btn secondary" type="submit">برو</button>
+    </form>
+    <div class="fs-bar">
+      <button class="btn-text" type="button" id="fsUp">↑ پوشه‌ی بالاتر</button>
+      <button class="btn-text" type="button" id="fsHome">پوشه‌ی خانه</button>
+      <span id="fsRoots"></span>
+    </div>
+    <p class="field-err" id="fsErr" role="alert"></p>
+    <ul class="fs-list" id="fsList"></ul>
+    <p class="hint" id="fsInfo"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="button" id="fsChoose">انتخاب این پوشه</button>
+      <button class="btn secondary" type="button" id="fsCancel">انصراف</button>
+    </div>
+  </div>
+</dialog>
+
+<!-- ===== انتخاب پلیر ===== -->
+<dialog id="plDialog" aria-labelledby="plTitle">
+  <form id="plForm" class="dlg" novalidate>
+    <h2 id="plTitle">پلیر ویدیو</h2>
+    <p class="muted">با کلیک روی هر ویدیو در چک‌لیست، آن ویدیو با همین پلیر باز می‌شود.</p>
+    <fieldset id="plList"></fieldset>
+    <p class="hint" id="plNote"></p>
+    <div id="plCustom" hidden>
+      <label class="field" for="plPath">مسیر کامل برنامه‌ی پلیر</label>
+      <input type="text" id="plPath" class="ltr" placeholder="/usr/bin/mpv   یا   C:\Program Files\...\player.exe" spellcheck="false" autocomplete="off">
+      <label class="field" for="plArgs" style="margin-top:10px">گزینه‌های اضافه (اختیاری)</label>
+      <input type="text" id="plArgs" class="ltr" placeholder="--fullscreen" spellcheck="false" autocomplete="off">
+      <p class="hint">مسیر ویدیو به‌صورت خودکار در انتهای فرمان اضافه می‌شود.</p>
+    </div>
+    <label class="check-row"><input type="checkbox" id="plResume"> ادامه از آخرین نقطه‌ی تماشا (فقط mpv و VLC)</label>
+    <p class="field-err" id="plErr" role="alert"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="submit">ذخیره</button>
+      <button class="btn secondary" type="button" id="plCancel">انصراف</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== ثبت دستی زمان توقف ===== -->
+<dialog id="posDialog" aria-labelledby="posTitle">
+  <form id="posForm" class="dlg" novalidate>
+    <h2 id="posTitle">زمان توقف</h2>
+    <p class="muted" id="posName" dir="auto"></p>
+    <label class="field" for="posInput">تا کجای ویدیو دیده‌اید؟</label>
+    <input type="text" id="posInput" class="ltr" placeholder="12:30   یا   1:05:30" autocomplete="off" spellcheck="false">
+    <p class="hint">به شکل دقیقه:ثانیه یا ساعت:دقیقه:ثانیه. با mpv یا VLC این زمان خودکار ثبت می‌شود.</p>
+    <p class="field-err" id="posErr" role="alert"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="submit">ذخیره</button>
+      <button class="btn secondary" type="button" id="posCancel">انصراف</button>
+      <span class="spacer"></span>
+      <button class="btn-text danger-text" type="button" id="posClear">پاک کردن</button>
     </div>
   </form>
 </dialog>
@@ -280,9 +377,11 @@ const state = {
   view: 'list', programs: [], filter: '',
   id: null, prog: null, report: null, plan: null, planMatches: null,
   tab: 'checklist', openDays: new Set(), pendingTab: null,
+  settings: null, positions: {}, active: [], noteUntracked: false,
 };
 let navToken = 0;
 const enc = encodeURIComponent;
+const tailOf = p => { const i = p.indexOf('/'); return i < 0 ? p : p.slice(i + 1); };   // مسیر داخل دوره، بدون نام پوشه‌ی ریشه
 
 /* ---------- زمان ---------- */
 const msOf = info => info ? Math.round(info.total_seconds * 1000) : 0;
@@ -359,6 +458,7 @@ async function refreshPrograms() { state.programs = await api('/api/programs'); 
 
 async function showList() {
   const my = ++navToken;
+  stopPolling();
   try { await refreshPrograms(); } catch (err) { toast(err.message, 'error'); }
   if (my !== navToken) return;
   state.view = 'list'; state.id = null;
@@ -384,6 +484,8 @@ async function showProgram(id, keep = false) {
   state.view = 'program'; state.id = id;
   state.prog = data.program; state.report = data.report; state.plan = data.plan;
   state.planMatches = data.plan_matches_report;
+  state.positions = data.positions || {};
+  state.active = data.active || [];
   if (!same) {
     state.tab = state.pendingTab || (state.plan ? 'checklist' : state.report ? 'plan' : 'structure');
     state.openDays = new Set();
@@ -399,6 +501,7 @@ async function showProgram(id, keep = false) {
   document.title = `${state.prog.name} — پلنر دوره آموزشی`;
   render();
   if (!same) window.scrollTo(0, 0);
+  if (state.active.length) startPolling(); else stopPolling();
 }
 
 function currentDay() {
@@ -478,6 +581,7 @@ const pd = {
   dirHint: $('#pdDirHint'), sameDir: $('#pdSameDir'), dirErr: $('#pdDirErr'),
   formErr: $('#pdFormErr'), status: $('#pdStatus'),
   submit: $('#pdSubmit'), cancel: $('#pdCancel'), del: $('#pdDelete'),
+  pick: $('#pdPick'), pickStatus: $('#pdPickStatus'),
 };
 let editing = null, busy = false;
 
@@ -499,7 +603,7 @@ function updateDirHints() {
   const changed = editing && normDir(dir) && normDir(dir) !== normDir(editing.directory);
   pd.dirHint.textContent = changed
     ? 'با ذخیره، پوشه‌ی جدید دوباره اسکن می‌شود. اگر نام پوشه‌ی دوره عوض شده باشد، تیک‌ها با مسیر داخل دوره حفظ می‌مانند.'
-    : 'مرورگر نمی‌تواند پوشه را انتخاب کند؛ مسیر را کپی و جای‌گذاری کنید (ویندوز: Shift + راست‌کلیک روی پوشه ← Copy as path).';
+    : 'با «انتخاب پوشه…» پوشه را انتخاب کنید، یا مسیر را خودتان بنویسید یا جای‌گذاری کنید.';
   const other = normDir(dir) && state.programs.find(p => p.id !== (editing && editing.id) && normDir(p.directory) === normDir(dir));
   pd.sameDir.textContent = other ? `برنامه‌ی «${other.name}» هم از همین پوشه استفاده می‌کند. مشکلی نیست؛ تیک‌های هر برنامه جداست.` : '';
 }
@@ -517,6 +621,7 @@ function setBusy(on, scanning) {
 function openProgramDialog(p) {
   editing = p;
   clearErrors();
+  pickSeq++; resetPick();
   pd.title.textContent = p ? 'ویرایش برنامه' : 'برنامه‌ی جدید';
   pd.name.value = p ? p.name : '';
   pd.dir.value = p ? p.directory : '';
@@ -730,7 +835,9 @@ function renderChecklist() {
       el('button', { class: 'btn secondary', type: 'button', text: 'باز کردن همه', onclick: () => {
         state.openDays = new Set(plan.days.map(d => d.day)); renderChecklist(); } }),
       el('button', { class: 'btn secondary', type: 'button', text: 'بستن همه', onclick: () => {
-        state.openDays = new Set(); renderChecklist(); } })));
+        state.openDays = new Set(); renderChecklist(); } }),
+      el('button', { class: 'btn secondary', type: 'button', text: playerLabel(),
+        title: 'انتخاب پلیری که ویدیوها با آن باز می‌شوند', onclick: () => openPlayerDialog() })));
 
   if (cur == null) box.append(el('div', { class: 'notice', style: 'background:var(--ok-bg);color:var(--ok)', text: 'همه‌ی روزها تمام شده است. خسته نباشید!' }));
 
@@ -777,15 +884,23 @@ function dayCard(d, done, cur) {
 function videoRow(v, isDone) {
   const parts = v.path.split('/');
   const dir = parts.slice(1, -1).join(' / ');   // بدون نام ریشه‌ی دوره و بدون نام فایل
-  const cb = el('input', { type: 'checkbox' });
+  const cb = el('input', { type: 'checkbox', 'aria-label': `تماشا شد: ${v.name}` });
   cb.checked = isDone;
   cb.addEventListener('change', () => setDone([v.path], cb.checked));
+  const chip = el('span', { class: 'vpos', 'data-tail': tailOf(v.path) });
+  fillChip(chip);
   return el('li', { class: 'vid' + (isDone ? ' done' : '') },
-    el('label', {}, cb,
+    el('label', { class: 'vcheck', title: 'علامت «تماشا شد»' }, cb),
+    el('button', { class: 'vplay', type: 'button', 'aria-label': `پخش: ${v.name}`, title: 'باز کردن با پلیر',
+                   onclick: () => playVideo(v) },
       el('span', { class: 'vname' },
         dir ? el('span', { class: 'vdir', dir: 'auto', text: dir }) : null,
-        el('span', { class: 'vfile', dir: 'auto', text: v.name })),
-      timeSpan(v.duration ? v.duration.text : '??:??:??')));
+        el('span', { class: 'vfile', dir: 'auto', text: v.name }),
+        chip),
+      timeSpan(v.duration ? v.duration.text : '??:??:??'),
+      el('span', { class: 'pico', 'aria-hidden': 'true', text: '▶' })),
+    el('button', { class: 'vedit', type: 'button', text: '⏱', title: 'ثبت زمان توقف',
+                   'aria-label': `ثبت زمان توقف: ${v.name}`, onclick: () => openPosDialog(v) }));
 }
 
 /* تیک‌زدن: اول در صفحه، بعد در فایل JSON روی سرور */
@@ -939,6 +1054,220 @@ function treeNode(node, isRoot) {
   return d;
 }
 
+/* ===================================================================
+   انتخاب پوشه (پنجره‌ی سیستم؛ اگر نبود، مرورگر پوشه‌ی داخل برنامه)
+   =================================================================== */
+let pickSeq = 0;
+function resetPick() { pd.pick.disabled = false; pd.pickStatus.replaceChildren(); }
+function setDirValue(path) {
+  pd.dir.value = path;
+  clearErrors();
+  updateDirHints();
+  pd.submit.focus();
+}
+function browseInApp() { pickSeq++; resetPick(); openFsDialog(pd.dir.value); }
+
+async function pickFolder() {
+  const my = ++pickSeq;
+  pd.pick.disabled = true;
+  pd.pickStatus.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }),
+    'پنجره‌ی انتخاب پوشه باز شد؛ اگر آن را نمی‌بینید، ',
+    el('button', { class: 'btn-text', type: 'button', text: 'پوشه را داخل همین صفحه مرور کنید', onclick: browseInApp,
+                   style: 'min-height:0;padding:0 4px' }), '.');
+  try {
+    const r = await api('/api/pick-folder', { method: 'POST', body: { initial: pd.dir.value.trim() } });
+    if (my !== pickSeq) return;
+    resetPick();
+    if (r.status === 'ok') setDirValue(r.path);
+    else if (r.status === 'unavailable') {
+      pd.pickStatus.textContent = 'پنجره‌ی انتخاب پوشه‌ی سیستم در دسترس نیست؛ مرورگر پوشه‌ی داخل برنامه باز شد.';
+      openFsDialog(pd.dir.value);
+    }
+  } catch (err) {
+    if (my !== pickSeq) return;
+    resetPick();
+    pd.formErr.textContent = err.message;
+  }
+}
+pd.pick.addEventListener('click', pickFolder);
+
+const fsd = { dlg: $('#fsDialog'), path: $('#fsPath'), list: $('#fsList'), err: $('#fsErr'), info: $('#fsInfo'), roots: $('#fsRoots') };
+let fsCur = null, fsSeq = 0;
+
+async function fsLoad(path) {
+  const my = ++fsSeq;
+  fsd.err.textContent = '';
+  try {
+    const r = await api('/api/fs?path=' + enc(path || ''));
+    if (my !== fsSeq) return;
+    fsCur = r;
+    fsd.path.value = r.path;
+    fsd.list.replaceChildren(...r.dirs.map(d => el('li', {},
+      el('button', { class: 'fs-item', type: 'button', dir: 'auto', text: d.name, onclick: () => fsLoad(d.path) }))));
+    if (!r.dirs.length) fsd.list.append(el('li', { class: 'empty', text: 'زیرپوشه‌ای ندارد.' }));
+    fsd.info.textContent = `${r.dirs.length} زیرپوشه · ${r.videos} ویدیو مستقیم در همین پوشه`;
+    $('#fsUp').disabled = !r.parent;
+    fsd.roots.replaceChildren(...r.roots.filter(x => r.roots.length > 1).map(x =>
+      el('button', { class: 'btn-text ltr', type: 'button', text: x, onclick: () => fsLoad(x) })));
+  } catch (err) { if (my === fsSeq) fsd.err.textContent = err.message; }
+}
+function openFsDialog(start) { fsd.dlg.showModal(); fsLoad((start || '').trim().replace(/^["']|["']$/g, '')); }
+
+$('#fsGo').addEventListener('submit', e => { e.preventDefault(); fsLoad(fsd.path.value.trim()); });
+$('#fsUp').addEventListener('click', () => { if (fsCur && fsCur.parent) fsLoad(fsCur.parent); });
+$('#fsHome').addEventListener('click', () => fsLoad(fsCur ? fsCur.home : ''));
+$('#fsCancel').addEventListener('click', () => fsd.dlg.close());
+$('#fsChoose').addEventListener('click', () => { if (fsCur) { setDirValue(fsCur.path); fsd.dlg.close(); } });
+
+/* ===================================================================
+   پلیر، پخش ویدیو و زمان توقف
+   =================================================================== */
+const plr = { dlg: $('#plDialog'), form: $('#plForm'), list: $('#plList'), note: $('#plNote'), custom: $('#plCustom'),
+              path: $('#plPath'), args: $('#plArgs'), resume: $('#plResume'), err: $('#plErr') };
+let afterPlayer = null;
+
+function playerLabel() { return state.settings ? `پلیر: ${state.settings.player.name}` : 'پلیر'; }
+const selectedPlayer = () => (plr.list.querySelector('input:checked') || {}).value;
+
+async function openPlayerDialog(after) {
+  afterPlayer = after || null;
+  try { state.settings = await api('/api/settings'); }
+  catch (err) { toast(err.message, 'error'); return; }
+  const s = state.settings, cur = s.player;
+  const opts = [
+    ['default', 'پیش‌فرض سیستم', 'فقط باز می‌کند'],
+    ...s.players.map(p => [p.id, p.name, p.tracking ? 'ثبت خودکار زمان توقف ✓' : 'فقط باز می‌کند']),
+    ['custom', 'پلیر دلخواه…', 'مسیر برنامه را خودتان بدهید · فقط باز می‌کند'],
+  ];
+  const chosen = opts.some(o => o[0] === cur.id) ? cur.id : 'default';
+  plr.list.replaceChildren(el('legend', { class: 'sr', text: 'انتخاب پلیر' }),
+    ...opts.map(([id, name, note]) => el('label', { class: 'popt' },
+      el('input', { type: 'radio', name: 'player', value: id, checked: id === chosen }),
+      el('span', {}, el('b', { text: name }), el('span', { class: 'muted', text: note })))));
+  const hasTracked = s.players.some(p => p.tracking);
+  plr.note.textContent = hasTracked ? '' : 'برای ثبت خودکار زمان توقف، mpv یا VLC نصب کنید. با پلیرهای دیگر می‌توانید زمان توقف را با دکمه‌ی ⏱ دستی ثبت کنید.';
+  if (cur.id !== chosen) plr.note.textContent = 'پلیر قبلی روی این سیستم پیدا نشد؛ یکی را دوباره انتخاب کنید.';
+  plr.custom.hidden = chosen !== 'custom';
+  plr.path.value = cur.id === 'custom' ? (cur.path || '') : '';
+  plr.args.value = cur.id === 'custom' ? (cur.args || '') : '';
+  plr.resume.checked = s.resume;
+  plr.err.textContent = '';
+  plr.dlg.showModal();
+}
+plr.list.addEventListener('change', () => { plr.custom.hidden = selectedPlayer() !== 'custom'; });
+$('#plCancel').addEventListener('click', () => { afterPlayer = null; plr.dlg.close(); });
+plr.form.addEventListener('submit', async e => {
+  e.preventDefault();
+  plr.err.textContent = '';
+  try {
+    state.settings = await api('/api/settings', { method: 'PUT', body: {
+      player_id: selectedPlayer() || 'default', custom_path: plr.path.value, custom_args: plr.args.value,
+      resume: plr.resume.checked } });
+    plr.dlg.close();
+    if (state.view === 'program') renderChecklist();
+    const next = afterPlayer; afterPlayer = null;
+    if (next) next();
+  } catch (err) { plr.err.textContent = err.message; }
+});
+
+async function playVideo(v) {
+  if (!state.settings || !state.settings.configured) { openPlayerDialog(() => playVideo(v)); return; }
+  try {
+    const r = await api(`/api/programs/${enc(state.id)}/play`, { method: 'POST', body: { path: v.path } });
+    if (r.already_running) { toast('این ویدیو همین الان باز است.', 'info'); return; }
+    const tail = tailOf(v.path);
+    let msg = `«${v.name}» با ${r.player} باز شد`;
+    if (r.start) msg += ` (از ${fmtShort(r.start * 1000)})`;
+    msg += '.';
+    const saved = state.positions[tail];
+    if (!r.can_start && saved && state.settings.resume) msg += ` این پلیر نمی‌تواند از آخرین نقطه (${fmtShort(saved.seconds * 1000)}) شروع کند.`;
+    if (!r.tracking && !state.noteUntracked) {
+      msg += ' زمان توقف با این پلیر خودکار ثبت نمی‌شود؛ با دکمه‌ی ⏱ دستی ثبت کنید.';
+      state.noteUntracked = true;
+    }
+    toast(msg, 'ok');
+    if (r.tracking) {
+      if (!state.active.includes(tail)) state.active = [...state.active, tail];
+      updatePosChips();
+      startPolling();
+    }
+  } catch (err) { toast(err.message, 'error'); }
+}
+
+/* نمایش «آخرین توقف» کنار هر ویدیو */
+function fillChip(c) {
+  const tail = c.dataset.tail;
+  const pos = state.positions[tail];
+  const live = state.active.includes(tail);
+  c.classList.toggle('live', live);
+  c.replaceChildren();
+  if (!pos && !live) return;
+  if (live) c.append('در حال پخش' + (pos ? ' · ' : ''));
+  if (pos) {
+    if (pos.duration && pos.seconds >= pos.duration - 10) c.append('تا انتها دیده شد');
+    else {
+      c.append('آخرین توقف: ', timeSpan(fmtShort(pos.seconds * 1000)));
+      if (pos.duration) c.append(' از ', timeSpan(fmtShort(pos.duration * 1000)));
+    }
+  }
+}
+function updatePosChips() { document.querySelectorAll('.vpos').forEach(fillChip); }
+
+let posTimer = null;
+function stopPolling() { clearInterval(posTimer); posTimer = null; }
+function startPolling() { if (!posTimer) posTimer = setInterval(pollPositions, 4000); }
+async function pollPositions() {
+  if (state.view !== 'program' || !state.id) { stopPolling(); return; }
+  const id = state.id;
+  try {
+    const r = await api(`/api/programs/${enc(id)}/positions`);
+    if (id !== state.id) return;
+    state.positions = r.positions;
+    state.active = r.active;
+    updatePosChips();
+    if (!r.active.length) stopPolling();
+  } catch (err) { stopPolling(); }
+}
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && state.view === 'program' && state.id) pollPositions();
+});
+
+/* ثبت دستی زمان توقف */
+const posd = { dlg: $('#posDialog'), form: $('#posForm'), input: $('#posInput'), err: $('#posErr') };
+let posTarget = null;
+function parseClock(text) {
+  const m = text.trim().match(/^(?:(\d+):)?(\d+):([0-5]\d)$/);
+  return m ? (+(m[1] || 0)) * 3600 + (+m[2]) * 60 + (+m[3]) : null;
+}
+function openPosDialog(v) {
+  posTarget = v;
+  const p = state.positions[tailOf(v.path)];
+  $('#posName').textContent = v.name;
+  posd.input.value = p ? fmtShort(p.seconds * 1000) : '';
+  posd.err.textContent = '';
+  $('#posClear').hidden = !p;
+  posd.dlg.showModal();
+  posd.input.focus();
+  posd.input.select();
+}
+async function savePosition(seconds) {
+  try {
+    const r = await api(`/api/programs/${enc(state.id)}/position`, { method: 'PUT', body: { path: posTarget.path, seconds } });
+    state.positions = r.positions;
+    updatePosChips();
+    posd.dlg.close();
+    toast(seconds == null ? 'زمان توقف پاک شد.' : 'زمان توقف ذخیره شد.', 'ok');
+  } catch (err) { posd.err.textContent = err.message; }
+}
+posd.form.addEventListener('submit', e => {
+  e.preventDefault();
+  const sec = parseClock(posd.input.value);
+  if (sec == null) { posd.err.textContent = 'زمان را به شکل 12:30 یا 1:05:30 وارد کنید.'; return; }
+  savePosition(sec);
+});
+$('#posClear').addEventListener('click', () => savePosition(null));
+$('#posCancel').addEventListener('click', () => posd.dlg.close());
+
 /* ---------- رویدادها ---------- */
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
   state.tab = b.dataset.tab; renderTabs();
@@ -951,6 +1280,7 @@ window.addEventListener('hashchange', route);
 
 /* ---------- شروع ---------- */
 (async function boot() {
+  try { state.settings = await api('/api/settings'); } catch (err) { /* بعداً هنگام انتخاب پلیر دوباره تلاش می‌شود */ }
   try { await refreshPrograms(); }
   catch (err) {
     $('#listBody').append(el('div', { class: 'notice', text: err.message }));

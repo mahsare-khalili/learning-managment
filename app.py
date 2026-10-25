@@ -13,6 +13,8 @@ app.py - برنامه‌ی وب (FastAPI) برای پلنر دوره‌ی آمو
 با اولین ویرایش، فایل meta برایشان ساخته می‌شود. چیزی پاک یا جابه‌جا نمی‌شود.
 
 برنامه‌ی حذف‌شده به data/trash/ منتقل می‌شود (قابل بازگردانی)، نه این‌که برای همیشه پاک شود.
+<id>_positions.json زمان توقف ویدیوها را نگه می‌دارد. تنظیمات پلیر در data/settings.json است.
+کارهای وابسته به سیستم‌عامل (انتخاب پوشه، پلیر) در system_tools.py هستند.
 
 اجرا:
     python app.py
@@ -21,17 +23,20 @@ app.py - برنامه‌ی وب (FastAPI) برای پلنر دوره‌ی آمو
 import json
 import os
 import shutil
+import sys
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
+from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 import course_timer as ct
+import system_tools as st
 
 BASE_DIR = Path(__file__).resolve().parent
 # اگر فایل‌های JSON شما جای دیگری است، می‌توانید با متغیر محیطی COURSE_DATA_DIR مسیرش را بدهید
@@ -40,11 +45,28 @@ DATA_DIR.mkdir(parents=True, exist_ok=True)
 TRASH_DIR = DATA_DIR / "trash"
 INDEX_HTML = BASE_DIR / "static" / "index.html"
 
-KINDS = ("meta", "report", "plan")
+KINDS = ("meta", "report", "plan", "positions")
+SETTINGS_FILE = DATA_DIR / "settings.json"
 MAX_NAME = 80
 MAX_GRACE = 120   # بیشترین تجاوز مجاز در روز (دقیقه)
 
 app = FastAPI(title="Course Planner")
+
+# چون برنامه می‌تواند پلیر باز کند و پوشه‌ها را فهرست کند، فقط درخواست‌های محلی پذیرفته می‌شود
+# (جلوگیری از سوءاستفاده‌ی صفحه‌های دیگر مرورگر و DNS rebinding).
+# اگر برنامه را با نام دیگری باز می‌کنید: COURSE_ALLOWED_HOSTS=my-host,other-host
+ALLOWED_HOSTS = {"127.0.0.1", "localhost", "::1"} | {
+    h.strip().lower() for h in os.environ.get("COURSE_ALLOWED_HOSTS", "").split(",") if h.strip()}
+
+
+@app.middleware("http")
+async def local_only(request, call_next):
+    host_header = request.headers.get("host", "")
+    host = (urlparse("//" + host_header).hostname or "").lower()
+    origin = request.headers.get("origin")
+    if host not in ALLOWED_HOSTS or (origin and urlparse(origin).netloc.lower() != host_header.lower()):
+        return JSONResponse({"detail": "این درخواست از مبدأ مجاز نیست."}, status_code=403)
+    return await call_next(request)
 
 # چند درخواست هم‌زمان نباید هم‌زمان در یک فایل بنویسند
 write_lock = threading.RLock()
@@ -365,6 +387,8 @@ def get_program(cid: str):
         "report": report,
         "plan": plan,
         "plan_matches_report": plan_matches_report(report, plan),
+        "positions": read_optional(course_file(cid, "positions")) or {},
+        "active": active_tails(cid),
     }
 
 
@@ -523,6 +547,255 @@ def download_json(cid: str, kind: str):
         raise HTTPException(404, "فایل پیدا نشد.")
     return FileResponse(path, media_type="application/json",
                         filename=f"{ct.safe_filename(name_of(cid))}_{kind}.json")
+
+
+# ----------------------------------------------------------------------
+# انتخاب پوشه
+# ----------------------------------------------------------------------
+class PickRequest(BaseModel):
+    initial: str = ""
+
+
+@app.post("/api/pick-folder")
+def pick_folder(req: PickRequest):
+    """پنجره‌ی انتخاب پوشه‌ی خود سیستم را باز می‌کند. status: ok | cancel | unavailable"""
+    status, path = st.pick_folder_native(clean_dir(req.initial))
+    return {"status": status, "path": path}
+
+
+@app.get("/api/fs")
+def browse_dirs(path: str = Query("")):
+    """فهرست زیرپوشه‌ها برای مرورگر پوشه‌ی داخل برنامه (وقتی پنجره‌ی سیستم در دسترس نیست)."""
+    try:
+        return st.list_dir(clean_dir(path))
+    except PermissionError:
+        raise HTTPException(403, "اجازه‌ی خواندن این پوشه را ندارید.")
+    except OSError as exc:
+        raise HTTPException(400, f"خطا در خواندن پوشه: {exc}")
+
+
+# ----------------------------------------------------------------------
+# تنظیمات پلیر
+# ----------------------------------------------------------------------
+DEFAULT_SETTINGS = {"configured": False, "resume": True,
+                    "player": {"id": "default", "path": "", "args": ""}}
+
+
+class SettingsRequest(BaseModel):
+    player_id: str = "default"
+    custom_path: str = ""
+    custom_args: str = ""
+    resume: bool = True
+
+
+def load_settings() -> dict:
+    data = read_optional(SETTINGS_FILE) or {}
+    s = {k: data.get(k, v) for k, v in DEFAULT_SETTINGS.items()}
+    s["player"] = {**DEFAULT_SETTINGS["player"], **(s["player"] or {})}
+    return s
+
+
+def settings_view() -> dict:
+    s = load_settings()
+    players = st.detect_players()
+    cur = dict(s["player"])
+    if cur["id"] == "default":
+        name, tracking, ok = "پیش‌فرض سیستم", False, True
+    elif cur["id"] == "custom":
+        name, tracking, ok = "دلخواه", False, bool(cur.get("path")) and bool(
+            shutil.which(cur["path"]) or os.path.isfile(cur["path"]))
+    else:
+        found = next((p for p in players if p["id"] == cur["id"]), None)
+        name = found["name"] if found else cur["id"]
+        tracking, ok = bool(found and found["tracking"]), found is not None
+    cur.update(name=name, tracking=tracking, available=ok)
+    return {"configured": s["configured"], "resume": s["resume"], "player": cur, "players": players}
+
+
+def resolve_player(cfg: dict) -> dict:
+    pid = cfg.get("id", "default")
+    if pid == "default":
+        return {"id": "default", "name": "پیش‌فرض سیستم", "path": ""}
+    if pid == "custom":
+        path = cfg.get("path", "")
+        if not path or not (shutil.which(path) or os.path.isfile(path)):
+            raise HTTPException(400, "پلیر دلخواه پیدا نشد. از دکمه‌ی «پلیر» مسیر درست را بدهید.")
+        return {"id": "custom", "name": "دلخواه", "path": path, "args": cfg.get("args", "")}
+    found = next((p for p in st.detect_players() if p["id"] == pid), None)
+    if not found:
+        raise HTTPException(400, "پلیر انتخاب‌شده روی این سیستم پیدا نشد. از دکمه‌ی «پلیر» یکی دیگر انتخاب کنید.")
+    return found
+
+
+@app.get("/api/settings")
+def get_settings():
+    return settings_view()
+
+
+@app.put("/api/settings")
+def put_settings(req: SettingsRequest):
+    player = {"id": req.player_id, "path": "", "args": ""}
+    if req.player_id == "custom":
+        path = clean_dir(req.custom_path)
+        exe = shutil.which(path) if path else None
+        if not exe and path and os.path.isfile(path):
+            exe = path
+        if not exe:
+            raise HTTPException(400, "فایل اجرایی پلیر پیدا نشد. مسیر کامل برنامه را بدهید.")
+        player.update(path=exe, args=req.custom_args.strip())
+    elif req.player_id != "default":
+        found = next((p for p in st.detect_players() if p["id"] == req.player_id), None)
+        if not found:
+            raise HTTPException(400, "این پلیر روی سیستم پیدا نشد.")
+        player["path"] = found["path"]
+    with write_lock:
+        ct.save_json({"configured": True, "resume": req.resume, "player": player}, SETTINGS_FILE)
+    return settings_view()
+
+
+# ----------------------------------------------------------------------
+# پخش ویدیو و زمان توقف
+# ----------------------------------------------------------------------
+SESSIONS: dict = {}                 # پخش‌های در حال ردیابی: "<id>|<tail>" -> {cid, tail, proc}
+sessions_lock = threading.Lock()
+
+
+def _alive(entry: dict) -> bool:
+    return entry["proc"] is None or entry["proc"].poll() is None
+
+
+def active_tails(cid: str) -> List[str]:
+    with sessions_lock:
+        return [e["tail"] for e in SESSIONS.values() if e["cid"] == cid and _alive(e)]
+
+
+def known_video_paths(report: Optional[dict], plan: Optional[dict]) -> set:
+    paths = set()
+    try:
+        if report:
+            paths |= {v["path"] for v in ct.flatten_videos(report["tree"])}
+        if plan:
+            paths |= {v["path"] for d in plan["days"] for v in d["videos"]}
+    except (KeyError, TypeError):
+        pass
+    return paths
+
+
+def save_position(cid: str, tail: str, seconds: float, duration: Optional[float] = None) -> None:
+    """از رشته‌ی ردیاب پلیر صدا زده می‌شود. اگر برنامه در این فاصله حذف شده باشد، چیزی نمی‌نویسد."""
+    try:
+        with write_lock:
+            if not (course_file(cid, "report").exists() or course_file(cid, "plan").exists()):
+                return
+            path = course_file(cid, "positions")
+            data = read_optional(path) or {}
+            old = data.get(tail) or {}
+            data[tail] = {"seconds": round(seconds, 1),
+                          "duration": round(duration, 1) if duration else old.get("duration"),
+                          "updated_at": now(), "manual": False}
+            ct.save_json(data, path)
+    except (OSError, HTTPException):
+        pass
+
+
+def resume_point(pos: Optional[dict]) -> float:
+    """از کجا ادامه بدهیم؟ نزدیک ابتدا یا انتها یعنی از اول."""
+    if not pos:
+        return 0.0
+    sec, dur = pos.get("seconds") or 0, pos.get("duration")
+    if sec < 5 or (dur and sec >= dur - 10):
+        return 0.0
+    return float(sec)
+
+
+class PlayRequest(BaseModel):
+    path: str
+
+
+class PositionRequest(BaseModel):
+    path: str
+    seconds: Optional[float] = None       # None = پاک کردن
+
+
+@app.post("/api/programs/{cid}/play")
+def play_video(cid: str, req: PlayRequest):
+    """ویدیو را با پلیر انتخاب‌شده‌ی کاربر باز می‌کند (فقط ویدیوهای همین برنامه)."""
+    meta, report, plan = load_program(cid)
+    if req.path not in known_video_paths(report, plan):
+        raise HTTPException(400, "این ویدیو در این برنامه نیست.")
+    root = meta.get("directory") or (report or {}).get("root_directory", "")
+    if not root or not os.path.isdir(root):
+        raise HTTPException(404, "پوشه‌ی دوره پیدا نشد. مسیر را در «ویرایش» اصلاح کنید.")
+    tail = _tail(req.path)
+    root_n = os.path.normpath(root)
+    video = os.path.normpath(os.path.join(root_n, *tail.split("/")))
+    if not video.startswith(root_n.rstrip(os.sep) + os.sep):
+        raise HTTPException(400, "مسیر ویدیو نامعتبر است.")
+    if Path(video).suffix.lower() not in ct.VIDEO_EXTENSIONS or not os.path.isfile(video):
+        raise HTTPException(404, f"فایل ویدیو پیدا نشد: {tail}")
+
+    settings = load_settings()
+    player = resolve_player(settings["player"])
+    key = f"{cid}|{tail}"
+    with sessions_lock:
+        running = SESSIONS.get(key)
+        if running and _alive(running):
+            return {"already_running": True, "player": player["name"], "tracking": True,
+                    "can_start": True, "start": 0}
+
+    positions = read_optional(course_file(cid, "positions")) or {}
+    can_start = player["id"] in st.TRACKED
+    start = resume_point(positions.get(tail)) if settings["resume"] and can_start else 0.0
+
+    entry = {"cid": cid, "tail": tail, "proc": None}
+    with sessions_lock:
+        SESSIONS[key] = entry
+
+    def on_exit() -> None:
+        with sessions_lock:
+            if SESSIONS.get(key) is entry:
+                SESSIONS.pop(key, None)
+
+    try:
+        info = st.start_player(player, video, start, player.get("args", ""),
+                               on_update=lambda sec, dur: save_position(cid, tail, sec, dur),
+                               on_exit=on_exit)
+    except (OSError, ValueError) as exc:
+        on_exit()
+        raise HTTPException(500, f"اجرای پلیر ناموفق بود: {exc}")
+    entry["proc"] = info["proc"]
+    if not info["tracking"]:
+        on_exit()
+    return {"already_running": False, "player": player["name"], "tracking": info["tracking"],
+            "can_start": info["can_start"], "start": start}
+
+
+@app.get("/api/programs/{cid}/positions")
+def get_positions(cid: str):
+    return {"positions": read_optional(course_file(cid, "positions")) or {},
+            "active": active_tails(cid)}
+
+
+@app.put("/api/programs/{cid}/position")
+def set_position(cid: str, req: PositionRequest):
+    """ثبت یا پاک کردن دستیِ زمان توقف (برای پلیرهایی که خودکار ثبت نمی‌کنند)."""
+    meta, report, plan = load_program(cid)
+    if req.path not in known_video_paths(report, plan):
+        raise HTTPException(400, "این ویدیو در این برنامه نیست.")
+    tail = _tail(req.path)
+    if req.seconds is not None and not (0 <= req.seconds <= 24 * 3600):
+        raise HTTPException(400, "زمان توقف باید بین ۰ تا ۲۴ ساعت باشد.")
+    path = course_file(cid, "positions")
+    with write_lock:
+        data = read_optional(path) or {}
+        if req.seconds is None:
+            data.pop(tail, None)
+        else:
+            old = data.get(tail) or {}
+            data[tail] = {"seconds": round(req.seconds, 1), "duration": old.get("duration"),
+                          "updated_at": now(), "manual": True}
+        ct.save_json(data, path)
+    return {"positions": data}
 
 
 if __name__ == "__main__":
