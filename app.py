@@ -14,7 +14,9 @@ app.py - rootend (root + tend: مراقبت از ریشه‌ها)، برنامه
 
 برنامه‌ی حذف‌شده به data/trash/ منتقل می‌شود (قابل بازگردانی)، نه این‌که برای همیشه پاک شود.
 <id>_positions.json زمان توقف ویدیوها را نگه می‌دارد.
-<id>_events.jsonl لاگ فقط-افزودنی رویدادها (هر خط یک JSON): plan_changed، video_done، play_session. تنظیمات پلیر در data/settings.json است.
+<id>_events.jsonl لاگ فقط-افزودنی رویدادها (هر خط یک JSON): plan_changed، video_done، play_session.
+profile.json نام و شناسه‌ی کاربر (user_id) و فهرست دستگاه‌ها. مسیر هر دوره روی هر دستگاه در <id>_meta.json
+(locations و active) است. اطلاعات نسخه‌ی اپ اندروید از android_release.json کنار app.py خوانده می‌شود. تنظیمات پلیر در data/settings.json است.
 کارهای وابسته به سیستم‌عامل (انتخاب پوشه، پلیر) در system_tools.py هستند.
 
 اجرا:
@@ -23,13 +25,16 @@ app.py - rootend (root + tend: مراقبت از ریشه‌ها)، برنامه
 """
 import json
 import os
+import re
+import secrets
 import shutil
+import socket
 import sys
 import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
@@ -84,12 +89,14 @@ write_lock = threading.RLock()
 # ----------------------------------------------------------------------
 class ProgramCreate(BaseModel):
     name: str = ""            # خالی = نام پوشه
-    directory: str
+    directory: str            # مسیر پوشه روی همین دستگاه (اسکن می‌شود)
+    device_paths: Dict[str, str] = {}    # اختیاری: {شناسه‌ی دستگاهِ دیگر: مسیر}؛ فقط ذخیره می‌شود
 
 
 class ProgramPatch(BaseModel):
     name: Optional[str] = None
-    directory: Optional[str] = None
+    directory: Optional[str] = None      # مسیر همین دستگاه (کوتاه‌نویسی برای device_paths[این دستگاه])
+    device_paths: Dict[str, str] = {}    # {شناسه‌ی دستگاه: مسیر فعال}؛ فقط دستگاه‌های تغییرکرده
     rescan: bool = False
 
 
@@ -253,6 +260,150 @@ def unique_name(base: str) -> str:
     return name
 
 
+# ----------------------------------------------------------------------
+# پروفایل، دستگاه‌ها و مسیر دوره روی هر دستگاه
+# ----------------------------------------------------------------------
+PROFILE_FILE = DATA_DIR / "profile.json"
+ANDROID_RELEASE_FILE = Path(os.environ.get("ROOTEND_ANDROID_RELEASE") or BASE_DIR / "android_release.json").expanduser()
+PLATFORMS = ("windows", "linux", "mac", "android", "ios")
+MAX_LOCATIONS, MAX_DEVICES, MAX_PATH = 50, 20, 1000
+ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
+USER_ID_RE = re.compile(r"^u_[A-Za-z0-9_-]{20,64}$")
+VERSION_RE = re.compile(r"^\d+(\.\d+){0,3}$")
+
+
+def this_platform() -> str:
+    if os.name == "nt":
+        return "windows"
+    return "mac" if sys.platform == "darwin" else "linux"
+
+
+def load_profile() -> dict:
+    """
+    profile.json: نام و شناسه‌ی کاربر (اگر وارد شده) + فهرست دستگاه‌ها.
+    بار اول فقط «همین دستگاه» ساخته می‌شود. فایل خراب را با فایل تازه جایگزین نمی‌کنیم
+    (شناسه‌ی کاربر از دست نرود)؛ خطا می‌دهیم.
+    """
+    with write_lock:
+        data = read_json(PROFILE_FILE) if PROFILE_FILE.exists() else {}
+        changed = not data
+        data.setdefault("user_id", None)
+        data.setdefault("name", "")
+        devices = data.setdefault("devices", [])
+        if not any(d.get("id") == data.get("current_device") for d in devices):
+            did = "d_" + secrets.token_hex(4)
+            devices.append({"id": did, "name": socket.gethostname() or "this device", "platform": this_platform()})
+            data["current_device"] = did
+            changed = True
+        if changed:
+            ct.save_json(data, PROFILE_FILE)
+        return data
+
+
+def profile_view(p: dict) -> dict:
+    return {"signed_in": bool(p.get("user_id")), "user_id": p.get("user_id"), "name": p.get("name", ""),
+            "signed_in_at": p.get("signed_in_at"), "current_device": p["current_device"], "devices": p["devices"]}
+
+
+def clean_label(text: Optional[str], limit: int, what: str) -> str:
+    text = " ".join((text or "").split())
+    if not text:
+        raise HTTPException(400, f"{what} نمی‌تواند خالی باشد.")
+    if len(text) > limit:
+        raise HTTPException(400, f"{what} حداکثر {limit} نویسه می‌تواند باشد.")
+    return text
+
+
+def clean_version(value: Optional[str]) -> str:
+    v = (value or "").strip()
+    if v and not VERSION_RE.match(v):
+        raise HTTPException(400, "نسخه را مثل 1.4.0 وارد کنید (فقط عدد و نقطه).")
+    return v
+
+
+def version_tuple(v) -> Optional[tuple]:
+    if not isinstance(v, str) or not VERSION_RE.match(v.strip()):
+        return None
+    parts = [int(x) for x in v.strip().split(".")]
+    return tuple(parts + [0] * (4 - len(parts)))
+
+
+def new_location_id() -> str:
+    return "l_" + secrets.token_hex(4)
+
+
+def locations_of(meta: dict, report: Optional[dict], profile: dict):
+    """
+    (locations, active) یک برنامه. هر مسیر: {"id", "device", "path"}؛ active: {شناسه‌ی دستگاه: شناسه‌ی مسیر}.
+    برنامه‌ی قدیمی که فقط یک directory داشت، یک مسیر برای همین دستگاه حساب می‌شود.
+    """
+    locs = meta.get("locations")
+    if isinstance(locs, list):
+        good = [l for l in locs if isinstance(l, dict) and l.get("id") and l.get("device") and l.get("path")]
+        active = meta.get("active")
+        return good, active if isinstance(active, dict) else {}
+    old = meta.get("directory") or (report or {}).get("root_directory", "")
+    if not old:
+        return [], {}
+    dev = profile["current_device"]
+    return [{"id": "l_main", "device": dev, "path": old}], {dev: "l_main"}
+
+
+def normalize_active(locs: List[dict], active: Optional[dict]) -> dict:
+    """برای هر دستگاهی که مسیر دارد، یک مسیر فعال: انتخاب‌شده اگر معتبر باشد، وگرنه اولی."""
+    out = {}
+    for dev in dict.fromkeys(l["device"] for l in locs):
+        mine = [l for l in locs if l["device"] == dev]
+        out[dev] = next((l for l in mine if l["id"] == (active or {}).get(dev)), mine[0])["id"]
+    return out
+
+
+def path_for(locs: List[dict], active: Optional[dict], device: str) -> str:
+    lid = normalize_active(locs, active).get(device)
+    return next((l["path"] for l in locs if l["id"] == lid), "")
+
+
+def effective_directory(meta: dict, report: Optional[dict]) -> str:
+    """مسیر فعالِ این برنامه روی همین دستگاه (خالی = برای این دستگاه مسیری تعریف نشده)."""
+    profile = load_profile()
+    locs, active = locations_of(meta, report, profile)
+    return path_for(locs, active, profile["current_device"])
+
+
+def check_device_paths(paths: Optional[Dict[str, str]]) -> Dict[str, str]:
+    """{دستگاه: مسیر} ورودی کاربر را بررسی و تمیز می‌کند."""
+    known = {d["id"] for d in load_profile()["devices"]}
+    out: Dict[str, str] = {}
+    for dev, raw in (paths or {}).items():
+        path = clean_dir(raw)
+        if dev not in known:
+            raise HTTPException(400, "دستگاه ناشناخته است. اول آن را در صفحه‌ی «حساب» اضافه کنید.")
+        if not path or len(path) > MAX_PATH:
+            raise HTTPException(400, "مسیر نمی‌تواند خالی یا بیش از حد بلند باشد.")
+        out[dev] = path
+    return out
+
+
+def apply_device_path(locs: List[dict], active: dict, device: str, path: str, is_here: bool):
+    """
+    مسیر فعالِ یک دستگاه را روی path می‌گذارد:
+      - همین مسیر قبلاً برای آن دستگاه ثبت بوده -> همان فعال می‌شود
+      - دستگاه یک مسیر فعال دارد -> همان مسیر در جا ویرایش می‌شود (غلط املایی/جابه‌جایی پوشه)
+      - دستگاه هنوز مسیری ندارد -> مسیر تازه ساخته و فعال می‌شود
+    """
+    def same(a: str, b: str) -> bool:
+        return norm_path(a) == norm_path(b) if is_here else a.rstrip("/\\") == b.rstrip("/\\")
+    mine = [l for l in locs if l["device"] == device]
+    hit = next((l for l in mine if same(l["path"], path)), None)
+    if hit:
+        return locs, {**active, device: hit["id"]}
+    act = next((l for l in mine if l["id"] == active.get(device)), None)
+    if act:
+        return [{**l, "path": path} if l["id"] == act["id"] else l for l in locs], active
+    new = {"id": new_location_id(), "device": device, "path": path}
+    return locs + [new], {**active, device: new["id"]}
+
+
 def scan_directory(directory: str) -> dict:
     if not directory:
         raise HTTPException(400, "مسیر پوشه را وارد کنید.")
@@ -329,11 +480,20 @@ def plan_brief(plan: dict) -> dict:
 
 def summarize(cid: str, meta: dict, report: Optional[dict], plan: Optional[dict]) -> dict:
     src = report or plan or {}
-    directory = meta.get("directory") or (report or {}).get("root_directory", "")
-    try:
-        exists = bool(directory) and Path(directory).is_dir()
-    except OSError:
-        exists = False
+    profile = load_profile()
+    here = profile["current_device"]
+    locs, active = locations_of(meta, report, profile)
+    active = normalize_active(locs, active)
+    directory = next((l["path"] for l in locs if l["id"] == active.get(here)), "")
+
+    def is_dir(path: str) -> bool:
+        try:
+            return bool(path) and Path(path).is_dir()
+        except OSError:
+            return False
+    exists = is_dir(directory)
+    # برای دستگاه‌های دیگر نمی‌شود وجود پوشه را بررسی کرد (exists = None)
+    loc_view = [{**l, "exists": is_dir(l["path"]) if l["device"] == here else None} for l in locs]
     try:
         brief = plan_brief(plan) if plan else None
     except (KeyError, TypeError):
@@ -349,6 +509,9 @@ def summarize(cid: str, meta: dict, report: Optional[dict], plan: Optional[dict]
         "name": meta.get("name") or src.get("course_name", cid),
         "directory": directory,
         "directory_exists": exists,
+        "locations": loc_view,
+        "active": active,
+        "current_device": here,
         "created_at": meta.get("created_at") or (report or {}).get("scanned_at"),
         "last_activity": max(stamps) if stamps else "",
         "video_count": video_count,
@@ -422,6 +585,9 @@ def create_program(req: ProgramCreate):
     if not directory:
         raise HTTPException(400, "مسیر پوشه را وارد کنید.")
     name = clean_name(req.name)
+    others = check_device_paths(req.device_paths)
+    if load_profile()["current_device"] in others:
+        raise HTTPException(400, "مسیر همین دستگاه را در فیلد مسیر اصلی بدهید.")
     if name:
         ensure_name_free(name)          # قبل از اسکنِ طولانی، زود خطا بدهد
     report = scan_directory(directory)
@@ -433,8 +599,13 @@ def create_program(req: ProgramCreate):
             name = unique_name(report["course_name"][:MAX_NAME])
         cid = new_id()
         stamp = now()
-        ct.save_json({"name": name, "directory": report["root_directory"],
-                      "created_at": stamp, "updated_at": stamp}, course_file(cid, "meta"))
+        here, lid = load_profile()["current_device"], new_location_id()
+        locs = [{"id": lid, "device": here, "path": report["root_directory"]}]
+        active = {here: lid}
+        for dev, path in others.items():
+            locs, active = apply_device_path(locs, active, dev, path, False)
+        ct.save_json({"name": name, "created_at": stamp, "updated_at": stamp,
+                      "locations": locs, "active": active}, course_file(cid, "meta"))
         ct.save_json(report, course_file(cid, "report"))
     return {"id": cid, "name": name, "video_count": report["video_count"],
             "failed": len(report["failed_files"])}
@@ -450,14 +621,19 @@ def get_program(cid: str):
         "plan_matches_report": plan_matches_report(report, plan),
         "positions": read_optional(course_file(cid, "positions")) or {},
         "active": active_tails(cid),
+        "devices": load_profile()["devices"],
     }
 
 
 @app.patch("/api/programs/{cid}")
 def update_program(cid: str, req: ProgramPatch):
-    """تغییر نام و/یا مسیر پوشه، یا اسکن مجدد. با تغییر مسیر، پوشه دوباره اسکن می‌شود."""
+    """
+    تغییر نام و/یا مسیر پوشه روی هر دستگاه (device_paths)، یا اسکن مجدد.
+    اگر مسیرِ همین دستگاه عوض شود پوشه‌ی جدید دوباره اسکن می‌شود؛ مسیر دستگاه‌های دیگر فقط ذخیره می‌شود.
+    """
     meta, report, plan = load_program(cid)
     current = summarize(cid, meta, report, plan)
+    here = current["current_device"]
 
     name = None
     if req.name is not None:
@@ -467,28 +643,35 @@ def update_program(cid: str, req: ProgramPatch):
         if name != current["name"]:
             ensure_name_free(name, exclude=cid)
 
-    directory = None
+    wanted = check_device_paths(req.device_paths)
     if req.directory is not None:
         directory = clean_dir(req.directory)
         if not directory:
             raise HTTPException(400, "مسیر پوشه را وارد کنید.")
-    dir_changed = directory is not None and (
-        not current["directory"] or norm_path(directory) != norm_path(current["directory"]))
+        wanted[here] = directory
+    dir_changed = here in wanted and (
+        not current["directory"] or norm_path(wanted[here]) != norm_path(current["directory"]))
 
     new_report = None
     if dir_changed or req.rescan:
-        new_report = scan_directory(directory if dir_changed else current["directory"])
+        new_report = scan_directory(wanted[here] if dir_changed else current["directory"])
 
     with write_lock:
         meta = read_optional(course_file(cid, "meta")) or {}
         meta.setdefault("created_at", current["created_at"] or now())
         meta["name"] = name if name is not None else meta.get("name") or current["name"]
+        profile = load_profile()
+        locs, active = locations_of(meta, report, profile)
+        active = normalize_active(locs, active)
+        for dev, path in wanted.items():
+            if dev == here and dir_changed:
+                path = new_report["root_directory"]       # همان‌طور که اسکن شد (مطلق و کامل)
+            locs, active = apply_device_path(locs, active, dev, path, dev == here)
         if new_report is not None:
-            meta["directory"] = new_report["root_directory"]
             ct.save_json(new_report, course_file(cid, "report"))
             report = new_report
-        else:
-            meta.setdefault("directory", current["directory"])
+        meta["locations"], meta["active"] = locs, normalize_active(locs, active)
+        meta.pop("directory", None)
         meta["updated_at"] = now()
         ct.save_json(meta, course_file(cid, "meta"))
 
@@ -499,6 +682,255 @@ def update_program(cid: str, req: ProgramPatch):
         "video_count": summary["video_count"],
         "failed": len(new_report["failed_files"]) if new_report else 0,
     }
+
+
+class LocationItem(BaseModel):
+    id: str = ""                   # خالی = مسیر جدید
+    device: str
+    path: str
+
+
+class LocationsRequest(BaseModel):
+    locations: List[LocationItem]
+    active: Dict[str, str] = {}    # {شناسه‌ی دستگاه: شناسه‌ی مسیر فعال}
+
+
+@app.put("/api/programs/{cid}/locations")
+def put_locations(cid: str, req: LocationsRequest):
+    """
+    مسیر این دوره روی هر دستگاه (کل فهرست را جایگزین می‌کند).
+    اگر مسیر فعالِ همین دستگاه عوض شود، پوشه‌ی جدید دوباره اسکن می‌شود؛ برای دستگاه‌های دیگر فقط ذخیره می‌شود.
+    """
+    meta, report, plan = load_program(cid)
+    profile = load_profile()
+    here = profile["current_device"]
+    known = {d["id"] for d in profile["devices"]}
+    if len(req.locations) > MAX_LOCATIONS:
+        raise HTTPException(400, f"حداکثر {MAX_LOCATIONS} مسیر برای یک برنامه.")
+
+    locs, ids, seen = [], set(), set()
+    for item in req.locations:
+        path = clean_dir(item.path)
+        if not path or len(path) > MAX_PATH:
+            raise HTTPException(400, "مسیر نمی‌تواند خالی یا بیش از حد بلند باشد.")
+        if item.device not in known:
+            raise HTTPException(400, "دستگاه ناشناخته است. اول آن را در صفحه‌ی «حساب» اضافه کنید.")
+        lid = item.id or new_location_id()
+        if not ID_RE.match(lid) or lid in ids:
+            raise HTTPException(400, "شناسه‌ی مسیر نامعتبر است.")
+        key = (item.device, norm_path(path) if item.device == here else path.rstrip("/\\"))
+        if key in seen:
+            raise HTTPException(400, f"این مسیر برای این دستگاه دو بار آمده است: {path}")
+        ids.add(lid)
+        seen.add(key)
+        locs.append({"id": lid, "device": item.device, "path": path})
+    active = normalize_active(locs, req.active)
+
+    old_here = effective_directory(meta, report)
+    new_here = path_for(locs, active, here)
+    new_report = None
+    if new_here and (not old_here or norm_path(new_here) != norm_path(old_here)):
+        new_report = scan_directory(new_here)        # خطا بدهد، چیزی ذخیره نمی‌شود
+
+    with write_lock:
+        meta = read_optional(course_file(cid, "meta")) or {}
+        meta.setdefault("created_at", now())
+        meta.setdefault("name", name_of(cid))
+        meta["locations"], meta["active"] = locs, active
+        meta.pop("directory", None)
+        meta["updated_at"] = now()
+        if new_report is not None:
+            ct.save_json(new_report, course_file(cid, "report"))
+            report = new_report
+        ct.save_json(meta, course_file(cid, "meta"))
+
+    summary = summarize(cid, meta, report, plan)
+    return {"program": summary, "rescanned": new_report is not None, "video_count": summary["video_count"],
+            "failed": len(new_report["failed_files"]) if new_report else 0}
+
+
+# ----------------------------------------------------------------------
+# API: پروفایل (ورود محلی)، دستگاه‌ها، اطلاعات نسخه‌ی اپ اندروید
+# ----------------------------------------------------------------------
+class LoginRequest(BaseModel):
+    name: str
+    user_id: str = ""           # خالی = شناسه‌ی تازه ساخته می‌شود
+
+
+class ProfilePatch(BaseModel):
+    name: str
+
+
+class DeviceRequest(BaseModel):
+    name: Optional[str] = None
+    platform: Optional[str] = None
+    app_version: Optional[str] = None
+
+
+def check_platform(value: Optional[str]) -> str:
+    if value not in PLATFORMS:
+        raise HTTPException(400, "نوع دستگاه نامعتبر است.")
+    return value
+
+
+def device_name_free(prof: dict, name: str, exclude: Optional[str] = None) -> None:
+    if any(d["name"].casefold() == name.casefold() for d in prof["devices"] if d["id"] != exclude):
+        raise HTTPException(409, f"دستگاهی با نام «{name}» از قبل هست. نام دیگری بدهید.")
+
+
+@app.get("/api/profile")
+def get_profile():
+    return profile_view(load_profile())
+
+
+@app.post("/api/profile/login")
+def login(req: LoginRequest):
+    """بدون سرور و بدون رمز: فقط نام و شناسه روی همین کامپیوتر ذخیره می‌شود. شناسه‌ی خالی = ساخت شناسه‌ی جدید."""
+    name = clean_label(req.name, 60, "نام")
+    uid = (req.user_id or "").strip()
+    if uid and not USER_ID_RE.match(uid):
+        raise HTTPException(400, "شناسه درست نیست. شناسه با u_ شروع می‌شود و حداقل ۲۰ نویسه‌ی بعد از آن دارد.")
+    with write_lock:
+        prof = load_profile()
+        if prof.get("user_id"):
+            raise HTTPException(409, "الان وارد شده‌اید. اول خارج شوید.")
+        prof["user_id"] = uid or "u_" + secrets.token_urlsafe(16)
+        prof["name"] = name
+        prof["signed_in_at"] = ct.now_stamp()
+        ct.save_json(prof, PROFILE_FILE)
+    return profile_view(prof)
+
+
+@app.post("/api/profile/logout")
+def logout():
+    """شناسه و نام را از این دستگاه برمی‌دارد؛ برنامه‌ها و دستگاه‌ها دست‌نخورده می‌مانند."""
+    with write_lock:
+        prof = load_profile()
+        prof["user_id"], prof["name"] = None, ""
+        prof.pop("signed_in_at", None)
+        ct.save_json(prof, PROFILE_FILE)
+    return profile_view(prof)
+
+
+@app.patch("/api/profile")
+def rename_profile(req: ProfilePatch):
+    name = clean_label(req.name, 60, "نام")
+    with write_lock:
+        prof = load_profile()
+        if not prof.get("user_id"):
+            raise HTTPException(409, "اول وارد شوید.")
+        prof["name"] = name
+        ct.save_json(prof, PROFILE_FILE)
+    return profile_view(prof)
+
+
+@app.post("/api/profile/devices")
+def add_device(req: DeviceRequest):
+    name = clean_label(req.name, 40, "نام دستگاه")
+    platform = check_platform(req.platform)
+    with write_lock:
+        prof = load_profile()
+        if len(prof["devices"]) >= MAX_DEVICES:
+            raise HTTPException(400, f"حداکثر {MAX_DEVICES} دستگاه.")
+        device_name_free(prof, name)
+        dev = {"id": "d_" + secrets.token_hex(4), "name": name, "platform": platform}
+        if platform == "android" and clean_version(req.app_version):
+            dev["app_version"] = clean_version(req.app_version)
+        prof["devices"].append(dev)
+        ct.save_json(prof, PROFILE_FILE)
+    return profile_view(prof)
+
+
+@app.patch("/api/profile/devices/{did}")
+def edit_device(did: str, req: DeviceRequest):
+    with write_lock:
+        prof = load_profile()
+        dev = next((d for d in prof["devices"] if d["id"] == did), None)
+        if dev is None:
+            raise HTTPException(404, "دستگاه پیدا نشد.")
+        if req.name is not None:
+            name = clean_label(req.name, 40, "نام دستگاه")
+            device_name_free(prof, name, exclude=did)
+            dev["name"] = name
+        if req.platform is not None:
+            dev["platform"] = check_platform(req.platform)
+        if dev["platform"] != "android":
+            dev.pop("app_version", None)
+        elif req.app_version is not None:
+            version = clean_version(req.app_version)
+            if version:
+                dev["app_version"] = version
+            else:
+                dev.pop("app_version", None)
+        ct.save_json(prof, PROFILE_FILE)
+    return profile_view(prof)
+
+
+@app.delete("/api/profile/devices/{did}")
+def delete_device(did: str):
+    """دستگاه را با مسیرهایش در همه‌ی برنامه‌ها حذف می‌کند (همین دستگاه قابل حذف نیست)."""
+    with write_lock:
+        prof = load_profile()
+        if did == prof["current_device"]:
+            raise HTTPException(400, "دستگاهی که الان با آن کار می‌کنید حذف نمی‌شود.")
+        if not any(d["id"] == did for d in prof["devices"]):
+            raise HTTPException(404, "دستگاه پیدا نشد.")
+        prof["devices"] = [d for d in prof["devices"] if d["id"] != did]
+        ct.save_json(prof, PROFILE_FILE)
+        for cid in existing_ids():
+            meta = read_optional(course_file(cid, "meta"))
+            if not meta or not isinstance(meta.get("locations"), list):
+                continue
+            keep = [l for l in meta["locations"] if l.get("device") != did]
+            if len(keep) != len(meta["locations"]):
+                meta["locations"], meta["active"] = keep, normalize_active(keep, meta.get("active"))
+                meta["updated_at"] = now()
+                ct.save_json(meta, course_file(cid, "meta"))
+    return profile_view(prof)
+
+
+def safe_url(value) -> str:
+    """فقط http(s) یا مسیر داخل همین سایت (/...)؛ مثلاً javascript: رد می‌شود."""
+    u = value.strip() if isinstance(value, str) else ""
+    ok = re.match(r"^https?://[^\s<>\"']+$", u) or re.match(r"^/(?!/)[^\s<>\"']*$", u)
+    return u if ok else ""
+
+
+@app.get("/api/android-update")
+def android_update():
+    """آخرین نسخه‌ی اپ اندروید (از android_release.json) و اینکه هر دستگاه اندرویدی آپدیت لازم دارد یا نه."""
+    prof = load_profile()
+    out = {"configured": False, "error": "", "release": None, "devices": []}
+    latest = None
+    if ANDROID_RELEASE_FILE.is_file():
+        try:
+            with open(ANDROID_RELEASE_FILE, encoding="utf-8") as f:
+                raw = json.load(f)
+            latest = version_tuple(raw.get("version"))
+            if latest is None:
+                out["error"] = "در android_release.json مقدار version باید مثل 1.4.0 باشد."
+            else:
+                log = raw.get("changelog") or []
+                log = [log] if isinstance(log, str) else log if isinstance(log, list) else []
+                sha = str(raw.get("sha256") or "").strip().lower()
+                out["release"] = {
+                    "version": raw["version"].strip(),
+                    "released_at": str(raw.get("released_at") or "")[:32],
+                    "changelog": [str(x)[:300] for x in log[:20]],
+                    "direct_url": safe_url(raw.get("apk_url")),
+                    "sha256": sha if re.fullmatch(r"[0-9a-f]{64}", sha) else "",
+                    "play_url": safe_url(raw.get("play_url")),
+                }
+                out["configured"] = True
+        except (OSError, ValueError, AttributeError):
+            out["error"] = "فایل android_release.json خوانده نشد یا JSON درستی نیست."
+    for d in prof["devices"]:
+        if d.get("platform") != "android":
+            continue
+        have = version_tuple(d.get("app_version"))
+        out["devices"].append({"id": d["id"], "name": d["name"], "app_version": d.get("app_version", ""),
+                               "update_available": (have < latest) if (have and latest) else None})
+    return out
 
 
 @app.delete("/api/programs/{cid}")
@@ -822,9 +1254,9 @@ def play_video(cid: str, req: PlayRequest):
     meta, report, plan = load_program(cid)
     if req.path not in known_video_paths(report, plan):
         raise HTTPException(400, "این ویدیو در این برنامه نیست.")
-    root = meta.get("directory") or (report or {}).get("root_directory", "")
+    root = effective_directory(meta, report)
     if not root or not os.path.isdir(root):
-        raise HTTPException(404, "پوشه‌ی دوره پیدا نشد. مسیر را در «ویرایش» اصلاح کنید.")
+        raise HTTPException(404, "پوشه‌ی دوره روی این دستگاه پیدا نشد. مسیر را در تب «مسیرها» اصلاح کنید.")
     tail = _tail(req.path)
     root_n = os.path.normpath(root)
     video = os.path.normpath(os.path.join(root_n, *tail.split("/")))

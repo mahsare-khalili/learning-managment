@@ -212,16 +212,54 @@
   .hist li:last-child { border-bottom: 0; }
   .hist .when { color: var(--muted); font-size: .85rem; }
 
+  /* ---- هدر و لینک حساب ---- */
+  .top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .acct { display: inline-flex; align-items: center; min-height: 44px; max-width: 220px; padding: 0 16px; border-radius: 99px;
+          border: 1px solid var(--line); background: var(--card); color: var(--text); text-decoration: none; font-weight: 600;
+          overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .acct:hover, .acct[aria-current=page] { border-color: var(--accent); }
+
+  /* ---- تب مسیرها ---- */
+  .devblock { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; }
+  .devblock h3 { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 0 0 6px; }
+  .loclist > .locrow + .locrow { border-top: 1px dashed var(--line); }
+  .locrow { display: flex; gap: 8px 10px; align-items: center; flex-wrap: wrap; padding: 4px 0; }
+  .lochit { flex: 1; min-width: 220px; display: flex; gap: 10px; align-items: center; cursor: pointer; padding: 6px 0; }
+  .lochit input { width: 20px; height: 20px; accent-color: var(--accent); flex: none; }
+  .path { direction: ltr; text-align: left; overflow-wrap: anywhere; font-size: .9rem; unicode-bidi: isolate; }
+  .locrow input[type=text], .locadd input[type=text] { flex: 1; min-width: 200px; }
+  .locadd { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+  /* ---- صفحه‌ی حساب ---- */
+  .devrow { display: flex; gap: 8px 12px; align-items: center; flex-wrap: wrap; padding: 8px 0; border-top: 1px solid var(--line); }
+  .devrow:first-of-type { border-top: 0; }
+  .devrow .grow { flex: 1; min-width: 160px; }
+  .uid { direction: ltr; text-align: left; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: .9rem;
+         background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; overflow-wrap: anywhere; flex: 1; min-width: 220px; }
+  .dlg select { width: 100%; }
+  .release-log { margin: 6px 0 12px; padding-inline-start: 22px; }
+
+  /* ---- مسیر روی دستگاه‌ها در پنجره‌ی برنامه و هدر ---- */
+  .devline { display: flex; gap: 6px 10px; align-items: center; flex-wrap: wrap; font-size: .85rem; color: var(--muted); }
+  .devline .btn-text { min-height: 32px; padding: 2px 8px; font-size: .85rem; }
+  .suggest { margin: 2px 0 8px; }
+  .suggest:empty { display: none; }
+  .suggest .btn-text { display: block; min-height: 36px; padding: 4px 8px; direction: ltr; text-align: left; overflow-wrap: anywhere; }
+  #pdOthers { margin: 16px 0 4px; border-top: 1px solid var(--line); padding-top: 10px; }
+  #pdOthers summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+  #pdOthers .field { margin-bottom: 10px; }
+
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1><a class="brand" href="#/programs" title="rootend — مراقبت از ریشه‌ها">
+  <div class="top"><h1><a class="brand" href="#/programs" title="rootend — مراقبت از ریشه‌ها">
     <img class="logo" src="/assets/images/rootend_logo_accurate.svg" alt="rootend"
          onerror="this.onerror=null;this.src='/assets/images/rootend_logo_accurate.jpg'">
     <span class="brand-text">rootend</span>
   </a></h1>
+  <a class="acct" id="acctLink" href="#/account">ورود</a></div>
 
   <!-- ===== فهرست و مدیریت برنامه‌ها ===== -->
   <section id="view-list" hidden>
@@ -233,6 +271,12 @@
     <div id="listBody"></div>
   </section>
 
+  <!-- ===== حساب: پروفایل، دستگاه‌ها، اپ اندروید ===== -->
+  <section id="view-account" hidden>
+    <a class="back" href="#/programs">→ همه‌ی برنامه‌ها</a>
+    <div id="acctBody"></div>
+  </section>
+
   <!-- ===== صفحه‌ی یک برنامه ===== -->
   <section id="view-program" hidden>
     <a class="back" href="#/programs">→ همه‌ی برنامه‌ها</a>
@@ -241,6 +285,7 @@
         <div>
           <h2 id="courseTitle" style="margin:0" dir="auto"></h2>
           <div class="dir" id="courseDir"></div>
+          <div class="devline" id="courseDev"></div>
         </div>
         <div class="head-actions">
           <button class="btn secondary" type="button" id="btnEdit">ویرایش</button>
@@ -253,10 +298,12 @@
         <button class="tab" role="tab" id="tab-checklist" data-tab="checklist">چک‌لیست روزانه</button>
         <button class="tab" role="tab" id="tab-plan" data-tab="plan">برنامه‌ریزی</button>
         <button class="tab" role="tab" id="tab-structure" data-tab="structure">ساختار و زمان‌ها</button>
+        <button class="tab" role="tab" id="tab-locations" data-tab="locations">مسیرها</button>
       </div>
       <div id="panel-checklist" role="tabpanel" aria-labelledby="tab-checklist"></div>
       <div id="panel-plan" role="tabpanel" aria-labelledby="tab-plan" hidden></div>
       <div id="panel-structure" role="tabpanel" aria-labelledby="tab-structure" hidden></div>
+      <div id="panel-locations" role="tabpanel" aria-labelledby="tab-locations" hidden></div>
     </div>
   </section>
 </div>
@@ -266,22 +313,30 @@
   <form id="pForm" class="dlg" novalidate>
     <h2 id="pdTitle"></h2>
     <fieldset id="pdFields">
+      <p class="notice" id="pdNotice" hidden></p>
       <label class="field">نام برنامه
         <input type="text" id="pdName" dir="auto" maxlength="80" autocomplete="off" aria-describedby="pdNameHint pdNameErr">
       </label>
       <p class="hint" id="pdNameHint"></p>
       <p class="field-err" id="pdNameErr" role="alert"></p>
 
-      <label class="field" for="pdDir">مسیر پوشه‌ی دوره</label>
+      <label class="field" for="pdDir" id="pdDirLabel">مسیر پوشه‌ی دوره</label>
       <div class="inline">
         <input type="text" id="pdDir" class="ltr" placeholder="C:\Courses\Python   یا   /home/me/Courses/Python"
                autocomplete="off" spellcheck="false" aria-describedby="pdDirHint pdSameDir pdDirErr">
         <button class="btn secondary" type="button" id="pdPick">انتخاب پوشه…</button>
       </div>
       <p class="hint" id="pdPickStatus" role="status" style="margin-bottom:0"></p>
+      <div class="suggest" id="pdSuggest"></div>
       <p class="hint" id="pdDirHint"></p>
       <p class="hint" id="pdSameDir"></p>
       <p class="field-err" id="pdDirErr" role="alert"></p>
+
+      <details id="pdOthers" hidden>
+        <summary>مسیر روی دستگاه‌های دیگر (اختیاری)</summary>
+        <div id="pdOtherRows"></div>
+        <p class="hint">مسیر دستگاه‌های دیگر فقط ذخیره می‌شود و همین‌جا بررسی نمی‌شود. برای چند مسیر روی یک دستگاه یا حذف یک مسیر، تب «مسیرها» را باز کنید.</p>
+      </details>
     </fieldset>
     <p class="field-err" id="pdFormErr" role="alert"></p>
     <p class="muted" id="pdStatus" role="status" style="margin:8px 0 0"></p>
@@ -290,6 +345,27 @@
       <button class="btn secondary" type="button" id="pdCancel">انصراف</button>
       <span class="spacer"></span>
       <button class="btn-text danger-text" type="button" id="pdDelete">حذف برنامه</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ===== دیالوگ دستگاه ===== -->
+<dialog id="devDialog" aria-labelledby="devTitle">
+  <form id="devForm" class="dlg" novalidate>
+    <h2 id="devTitle"></h2>
+    <label class="field" for="devName">نام دستگاه</label>
+    <input type="text" id="devName" dir="auto" maxlength="40" autocomplete="off" placeholder="مثلاً گوشی من">
+    <label class="field" for="devPlatform" style="margin-top:10px">نوع دستگاه</label>
+    <select id="devPlatform"></select>
+    <div id="devVerBox" hidden>
+      <label class="field" for="devVer" style="margin-top:10px">نسخه‌ی اپ اندروید نصب‌شده (اختیاری)</label>
+      <input type="text" id="devVer" class="ltr" placeholder="1.2.0" autocomplete="off" spellcheck="false">
+      <p class="hint">برای اینکه معلوم شود اپ شما آپدیت لازم دارد. نسخه را از بخش «درباره»ی اپ ببینید.</p>
+    </div>
+    <p class="field-err" id="devErr" role="alert"></p>
+    <div class="dlg-actions">
+      <button class="btn" type="submit">ذخیره</button>
+      <button class="btn secondary" type="button" id="devCancel">انصراف</button>
     </div>
   </form>
 </dialog>
@@ -402,6 +478,7 @@ const state = {
   id: null, prog: null, report: null, plan: null, planMatches: null,
   tab: 'checklist', openDays: new Set(), pendingTab: null,
   settings: null, positions: {}, active: [], noteUntracked: false,
+  devices: [], editLoc: null, profile: null, android: null,
 };
 let navToken = 0;
 const enc = encodeURIComponent;
@@ -469,6 +546,7 @@ function forget() { try { localStorage.removeItem('lastProgram'); } catch (e) {}
 function navigate(hash) { if (location.hash === hash) route(); else location.hash = hash; }
 
 function route() {
+  if (location.hash === '#/account') return showAccount();
   const m = location.hash.match(/^#\/p\/([^/?#]+)/);
   if (m) {
     let id;
@@ -478,7 +556,11 @@ function route() {
   return showList();
 }
 
-async function refreshPrograms() { state.programs = await api('/api/programs'); }
+async function refreshPrograms() {
+  const [programs, profile] = await Promise.all([api('/api/programs'), api('/api/profile')]);
+  state.programs = programs; state.profile = profile;
+  updateAcctLink();
+}
 
 async function showList() {
   const my = ++navToken;
@@ -487,7 +569,9 @@ async function showList() {
   if (my !== navToken) return;
   state.view = 'list'; state.id = null;
   $('#view-program').hidden = true;
+  $('#view-account').hidden = true;
   $('#view-list').hidden = false;
+  updateAcctLink();
   document.title = 'rootend';
   renderList();
 }
@@ -506,6 +590,7 @@ async function showProgram(id, keep = false) {
   if (my !== navToken) return;
   const same = keep && state.id === id;
   state.view = 'program'; state.id = id;
+  state.devices = data.devices || [];
   state.prog = data.program; state.report = data.report; state.plan = data.plan;
   state.planMatches = data.plan_matches_report;
   state.positions = data.positions || {};
@@ -513,6 +598,7 @@ async function showProgram(id, keep = false) {
   if (!same) {
     state.tab = state.pendingTab || (state.plan ? 'checklist' : state.report ? 'plan' : 'structure');
     state.openDays = new Set();
+    state.editLoc = null;
     const cur = currentDay();
     if (cur != null) state.openDays.add(cur);
   } else if (!state.plan && state.tab === 'checklist') {
@@ -521,7 +607,9 @@ async function showProgram(id, keep = false) {
   state.pendingTab = null;
   remember(id);
   $('#view-list').hidden = true;
+  $('#view-account').hidden = true;
   $('#view-program').hidden = false;
+  updateAcctLink();
   document.title = `${state.prog.name} — rootend`;
   render();
   if (!same) window.scrollTo(0, 0);
@@ -553,6 +641,13 @@ function renderList() {
       el('button', { class: 'btn', type: 'button', text: 'ساخت اولین برنامه', onclick: () => openProgramDialog(null) })));
     return;
   }
+  const missing = all.filter(p => !p.directory);
+  if (missing.length) {
+    const first = missing[0];
+    box.append(el('div', { class: 'notice' },
+      el('p', { text: `${missing.length} برنامه روی «${devName(first.current_device) || 'این دستگاه'}» مسیری ندارد (احتمالاً از دستگاه دیگری آمده‌اند). مسیر پوشه‌ی هر دوره را روی همین دستگاه مشخص کنید تا اسکن و پخش کار کند؛ چک‌لیست بدون مسیر هم کار می‌کند.` }),
+      el('button', { class: 'btn secondary', type: 'button', text: `تعیین مسیر «${first.name}»`, onclick: () => openProgramDialog(first, true) })));
+  }
   const q = search.hidden ? '' : state.filter.trim().toLowerCase();
   const shown = q ? all.filter(p => `${p.name} ${p.directory}`.toLowerCase().includes(q)) : all;
   if (!shown.length) { box.append(el('p', { class: 'empty', text: 'برنامه‌ای با این عبارت پیدا نشد.' })); return; }
@@ -565,7 +660,8 @@ function programCard(p) {
   const label = !pl ? 'ساخت برنامه‌ی روزانه' : complete ? 'مشاهده' : 'ادامه‌ی تماشا';
 
   const chips = el('div', { class: 'chips' });
-  if (!p.directory_exists) chips.append(el('span', { class: 'chip warn', text: 'پوشه پیدا نشد' }));
+  if (!p.directory) chips.append(el('span', { class: 'chip warn', text: 'بدون مسیر روی این دستگاه' }));
+  else if (!p.directory_exists) chips.append(el('span', { class: 'chip warn', text: 'پوشه پیدا نشد' }));
   if (!pl) {
     chips.append(el('span', { class: 'chip', text: `${p.video_count} ویدیو · بدون برنامه‌ی روزانه` }));
   } else {
@@ -578,7 +674,8 @@ function programCard(p) {
   return el('article', { class: 'pcard' },
     el('div', {},
       el('h3', { dir: 'auto', text: p.name }),
-      el('div', { class: 'dir', text: p.directory || '—' })),
+      p.directory ? el('div', { class: 'dir', text: p.directory })
+        : el('div', { class: 'muted', style: 'font-size:.85rem', text: 'مسیر این دستگاه تعیین نشده' })),
     pl ? el('div', {},
       el('div', { class: 'bar', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100',
                   'aria-valuenow': String(Math.round(pl.progress_pct)), 'aria-label': 'پیشرفت' },
@@ -591,6 +688,8 @@ function programCard(p) {
     chips,
     el('div', { class: 'pactions' },
       el('a', { class: 'btn open', href: `#/p/${enc(p.id)}`, text: label }),
+      !p.directory ? el('button', { class: 'btn-text', type: 'button', text: 'تعیین مسیر', 'aria-label': `تعیین مسیر برنامه‌ی ${p.name} روی این دستگاه`,
+                                    onclick: () => openProgramDialog(p, true) }) : null,
       el('button', { class: 'btn-text', type: 'button', text: 'ویرایش', 'aria-label': `ویرایش برنامه‌ی ${p.name}`,
                      onclick: () => openProgramDialog(p) }),
       el('button', { class: 'btn-text danger-text', type: 'button', text: 'حذف', 'aria-label': `حذف برنامه‌ی ${p.name}`,
@@ -607,8 +706,16 @@ const pd = {
   formErr: $('#pdFormErr'), status: $('#pdStatus'),
   submit: $('#pdSubmit'), cancel: $('#pdCancel'), del: $('#pdDelete'),
   pick: $('#pdPick'), pickStatus: $('#pdPickStatus'),
+  label: $('#pdDirLabel'), notice: $('#pdNotice'), suggest: $('#pdSuggest'), others: $('#pdOthers'), otherRows: $('#pdOtherRows'),
 };
 let editing = null, busy = false;
+let pdInputs = new Map(), pdCands = [];
+
+/* دستگاه‌ها و مسیر هر برنامه روی هر دستگاه */
+const devicesNow = () => (state.view === 'program' && state.devices.length ? state.devices : (state.profile ? state.profile.devices : []));
+const devName = id => (devicesNow().find(d => d.id === id) || {}).name || '';
+const meId = p => (p && p.current_device) || (state.profile && state.profile.current_device) || '';
+const activePathOf = (p, devId) => { const l = p.locations.find(x => x.id === p.active[devId]); return l ? l.path : ''; };
 
 const baseName = d => d.trim().replace(/^["']|["']$/g, '').replace(/[\\/]+$/, '').split(/[\\/]/).pop() || '';
 const normDir = d => d.trim().replace(/^["']|["']$/g, '').replace(/[\\/]+$/, '').toLowerCase();
@@ -631,6 +738,35 @@ function updateDirHints() {
     : 'با «انتخاب پوشه…» پوشه را انتخاب کنید، یا مسیر را خودتان بنویسید یا جای‌گذاری کنید.';
   const other = normDir(dir) && state.programs.find(p => p.id !== (editing && editing.id) && normDir(p.directory) === normDir(dir));
   pd.sameDir.textContent = other ? `برنامه‌ی «${other.name}» هم از همین پوشه استفاده می‌کند. مشکلی نیست؛ تیک‌های هر برنامه جداست.` : '';
+  updateSuggest();
+}
+
+/* ردیف مسیر برای هر دستگاهِ دیگر + پیشنهاد مسیر از دستگاه هم‌نوع */
+function fillDeviceRows(p) {
+  const me = meId(p), devs = devicesNow();
+  const mine = devs.find(d => d.id === me);
+  const others = devs.filter(d => d.id !== me);
+  pd.label.textContent = others.length && mine ? `مسیر پوشه‌ی دوره روی «${mine.name}» (این دستگاه)` : 'مسیر پوشه‌ی دوره';
+  pdInputs = new Map();
+  pd.otherRows.replaceChildren(...others.map(d => {
+    const input = el('input', { type: 'text', class: 'ltr', value: p ? activePathOf(p, d.id) : '', placeholder: PATH_EXAMPLE[d.platform] || '',
+                                autocomplete: 'off', spellcheck: 'false' });
+    pdInputs.set(d.id, input);
+    return el('label', { class: 'field' },
+      el('span', {}, el('span', { dir: 'auto', text: d.name }), ' ', el('span', { class: 'chip', text: PLATFORM_LABEL[d.platform] || d.platform })),
+      input);
+  }));
+  pd.others.hidden = !others.length;
+  pd.others.open = !!p && others.some(d => activePathOf(p, d.id));
+  pdCands = p && mine ? others.filter(d => d.platform === mine.platform && activePathOf(p, d.id))
+    .map(d => ({ name: d.name, path: activePathOf(p, d.id) })) : [];
+}
+function updateSuggest() {
+  pd.suggest.replaceChildren();
+  if (pd.dir.value.trim() || !pdCands.length) return;
+  pd.suggest.append(el('p', { class: 'hint', style: 'margin-bottom:2px', text: 'این دوره روی دستگاه دیگری از همین نوع سیستم هم مسیر دارد. اگر روی این دستگاه همان مسیر است، انتخابش کنید:' }),
+    ...pdCands.map(c => el('button', { class: 'btn-text', type: 'button', text: c.path, title: `مسیر روی ${c.name}`,
+      onclick: () => { pd.dir.value = c.path; updateDirHints(); pd.dir.focus(); } })));
 }
 pd.dir.addEventListener('input', updateDirHints);
 
@@ -643,10 +779,13 @@ function setBusy(on, scanning) {
     scanning ? 'در حال اسکن ویدیوها… بسته به تعداد ویدیوها ممکن است چند ثانیه طول بکشد.' : 'در حال ذخیره…');
 }
 
-function openProgramDialog(p) {
+function openProgramDialog(p, focusPath = false) {
   editing = p;
   clearErrors();
   pickSeq++; resetPick();
+  fillDeviceRows(p);
+  pd.notice.hidden = !(p && !p.directory);
+  pd.notice.textContent = `این برنامه روی «${devName(meId(p)) || 'این دستگاه'}» مسیری ندارد (احتمالاً از دستگاه دیگری آمده). پوشه‌ی دوره را روی همین دستگاه انتخاب کنید.`;
   pd.title.textContent = p ? 'ویرایش برنامه' : 'برنامه‌ی جدید';
   pd.name.value = p ? p.name : '';
   pd.dir.value = p ? p.directory : '';
@@ -655,8 +794,8 @@ function openProgramDialog(p) {
   pd.del.hidden = !p;
   updateDirHints();
   pd.dlg.showModal();
-  pd.name.focus();
-  if (p) pd.name.select();
+  (focusPath ? pd.dir : pd.name).focus();
+  if (p && !focusPath) pd.name.select();
 }
 
 pd.dlg.addEventListener('cancel', e => { if (busy) e.preventDefault(); });
@@ -670,17 +809,26 @@ pd.form.addEventListener('submit', async e => {
   const name = pd.name.value.trim().replace(/\s+/g, ' ');
   const dir = pd.dir.value.trim();
   if (editing && !name) { fieldError(pd.name, pd.nameErr, 'نام برنامه نمی‌تواند خالی باشد.'); pd.name.focus(); return; }
-  if (!dir) { fieldError(pd.dir, pd.dirErr, 'مسیر پوشه را وارد کنید.'); pd.dir.focus(); return; }
+  if (!editing && !dir) { fieldError(pd.dir, pd.dirErr, 'مسیر پوشه را وارد کنید.'); pd.dir.focus(); return; }
+  if (editing && editing.directory && !dir) {
+    fieldError(pd.dir, pd.dirErr, 'مسیر این دستگاه نمی‌تواند خالی شود. برای حذف یک مسیر از تب «مسیرها» استفاده کنید.'); pd.dir.focus(); return;
+  }
+  const typed = {};                                       // مسیر دستگاه‌های دیگر که پر شده
+  for (const [id, input] of pdInputs) { const v = cleanPath(input.value); if (v) typed[id] = v; }
 
   let body, scanning;
   if (editing) {
     body = {};
     if (name !== editing.name) body.name = name;
-    if (normDir(dir) !== normDir(editing.directory)) body.directory = dir;
+    if (dir && normDir(dir) !== normDir(editing.directory)) body.directory = dir;
+    const changed = {};
+    for (const [id, v] of Object.entries(typed)) if (v !== activePathOf(editing, id)) changed[id] = v;
+    if (Object.keys(changed).length) body.device_paths = changed;
     if (!Object.keys(body).length) { pd.dlg.close(); return; }
     scanning = 'directory' in body;
   } else {
     body = { name, directory: dir };
+    if (Object.keys(typed).length) body.device_paths = typed;
     scanning = true;
   }
 
@@ -759,13 +907,27 @@ function render() {
   renderChecklist();
   renderPlanner();
   renderStructure();
+  renderLocations();
 }
 
 function renderHeader() {
   const p = state.prog;
   $('#courseTitle').textContent = p.name;
   $('#courseDir').textContent = p.directory || '';
-  $('#dirWarn').hidden = p.directory_exists || !p.directory;
+  const who = devName(p.current_device) || 'این دستگاه';
+  const nDev = Object.keys(p.active).length;
+  const line = [];
+  if (p.directory) line.push(`مسیر روی «${who}»`);
+  if (nDev > 1) line.push(el('button', { class: 'btn-text', type: 'button', text: `همه‌ی مسیرها (${nDev} دستگاه)`,
+    onclick: () => { state.tab = 'locations'; renderTabs(); } }));
+  $('#courseDev').replaceChildren(...line);
+  const warn = $('#dirWarn');
+  warn.replaceChildren(
+    p.directory ? `این پوشه روی «${who}» پیدا نشد. اگر جابه‌جا یا تغییر نام داده شده، مسیر را اصلاح کنید. چک‌لیست همچنان کار می‌کند.`
+                : `این برنامه روی «${who}» مسیری ندارد (احتمالاً از دستگاه دیگری آمده). پوشه‌ی دوره را روی همین دستگاه مشخص کنید. چک‌لیست همچنان کار می‌کند.`,
+    el('button', { class: 'btn secondary', type: 'button', style: 'display:block', text: p.directory ? 'اصلاح مسیر' : 'تعیین مسیر روی این دستگاه',
+                   onclick: () => openProgramDialog(state.prog, true) }));
+  warn.hidden = !!p.directory_exists;
   $('#btnRescan').disabled = !p.directory;
   const links = $('#courseLinks');
   links.replaceChildren();
@@ -1172,6 +1334,291 @@ function treeNode(node, isRoot) {
 }
 
 /* ===================================================================
+   تب «مسیرها»: مسیر همین دوره روی هر دستگاه
+   =================================================================== */
+const PLATFORM_LABEL = { windows: 'ویندوز', linux: 'لینوکس', mac: 'مک', android: 'اندروید', ios: 'iOS' };
+const PATH_EXAMPLE = { windows: 'D:\\Courses\\Python', linux: '/home/me/Courses/Python', mac: '/Users/me/Courses/Python',
+                       android: '/storage/emulated/0/Courses/Python', ios: '' };
+let locBusy = false;
+const cleanPath = v => v.trim().replace(/^["']|["']$/g, '');
+const locsOf = () => state.prog.locations.map(l => ({ id: l.id, device: l.device, path: l.path }));
+
+function renderLocations() {
+  $('#panel-locations').replaceChildren(
+    el('p', { class: 'muted', text: 'همین دوره روی هر دستگاه ممکن است در مسیر دیگری باشد. برای هر دستگاه مسیرها را بنویسید و یکی را فعال کنید؛ برنامه روی هر دستگاه از مسیر فعالِ همان دستگاه استفاده می‌کند.' }),
+    ...state.devices.map(dev => deviceBlock(dev)),
+    el('p', { class: 'hint' }, 'دستگاهی که در این فهرست نیست را در ', el('a', { href: '#/account', text: 'صفحه‌ی حساب' }), ' اضافه کنید.'));
+}
+
+function deviceBlock(dev) {
+  const p = state.prog, here = dev.id === p.current_device;
+  const mine = p.locations.filter(l => l.device === dev.id);
+  const input = el('input', { type: 'text', class: 'ltr', placeholder: PATH_EXAMPLE[dev.platform] || '', autocomplete: 'off',
+                              spellcheck: 'false', 'aria-label': `مسیر جدید برای ${dev.name}` });
+  return el('div', { class: 'devblock' },
+    el('h3', {}, el('span', { dir: 'auto', text: dev.name }),
+      el('span', { class: 'chip', text: PLATFORM_LABEL[dev.platform] || dev.platform }),
+      here ? el('span', { class: 'chip ok', text: 'این دستگاه' }) : null),
+    el('div', { class: 'loclist' }, mine.length ? mine.map(l => locRow(dev, l, here))
+      : el('p', { class: 'muted', text: 'برای این دستگاه هنوز مسیری ثبت نشده است.' })),
+    el('form', { class: 'locadd', onsubmit: e => { e.preventDefault(); addLocation(dev, input.value); } },
+      input,
+      here ? el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }) : null,
+      el('button', { class: 'btn', type: 'submit', text: 'افزودن مسیر' })),
+    here ? null : el('p', { class: 'hint', text: 'این مسیر برای دستگاه دیگری است؛ همین‌جا بررسی نمی‌شود و فقط ذخیره می‌شود.' }));
+}
+
+function locRow(dev, l, here) {
+  const p = state.prog, isActive = p.active[dev.id] === l.id;
+  if (state.editLoc === l.id) {
+    const input = el('input', { type: 'text', class: 'ltr', value: l.path, autocomplete: 'off', spellcheck: 'false', 'aria-label': 'مسیر' });
+    return el('form', { class: 'locrow', onsubmit: e => { e.preventDefault(); editLocation(l, input.value); } },
+      input,
+      here ? el('button', { class: 'btn secondary', type: 'button', text: 'انتخاب پوشه…', onclick: e => pickFolderFor(input, e.currentTarget) }) : null,
+      el('button', { class: 'btn', type: 'submit', text: 'ذخیره' }),
+      el('button', { class: 'btn secondary', type: 'button', text: 'انصراف', onclick: () => { state.editLoc = null; renderLocations(); } }));
+  }
+  const radio = el('input', { type: 'radio', name: `act-${dev.id}` });
+  radio.checked = isActive;
+  radio.addEventListener('change', () => {
+    if (radio.checked) saveLocations(locsOf(), { ...p.active, [dev.id]: l.id }, 'مسیر فعال عوض شد.');
+  });
+  return el('div', { class: 'locrow' },
+    el('label', { class: 'lochit', title: 'فعال کردن این مسیر' }, radio, el('span', { class: 'path', text: l.path })),
+    isActive ? el('span', { class: 'chip ok', text: 'فعال' }) : null,
+    l.exists === false ? el('span', { class: 'chip warn', text: 'پیدا نشد' }) : null,
+    el('button', { class: 'btn-text', type: 'button', text: 'ویرایش', 'aria-label': `ویرایش مسیر ${l.path}`,
+                   onclick: () => { state.editLoc = l.id; renderLocations(); } }),
+    el('button', { class: 'btn-text danger-text', type: 'button', text: 'حذف', 'aria-label': `حذف مسیر ${l.path}`,
+                   onclick: () => removeLocation(l) }));
+}
+
+function addLocation(dev, value) {
+  const path = cleanPath(value);
+  if (!path) { toast('مسیر را بنویسید.', 'error'); return; }
+  saveLocations([...locsOf(), { id: '', device: dev.id, path }], state.prog.active, 'مسیر اضافه شد.');
+}
+function editLocation(l, value) {
+  const path = cleanPath(value);
+  if (!path) { toast('مسیر نمی‌تواند خالی باشد.', 'error'); return; }
+  if (path === l.path) { state.editLoc = null; renderLocations(); return; }
+  saveLocations(locsOf().map(x => x.id === l.id ? { ...x, path } : x), state.prog.active, 'مسیر ویرایش شد.');
+}
+function removeLocation(l) {
+  if (!confirm(`این مسیر از فهرست حذف شود؟\n${l.path}\n(پوشه‌ی واقعی روی دستگاه حذف نمی‌شود.)`)) return;
+  saveLocations(locsOf().filter(x => x.id !== l.id), state.prog.active, 'مسیر حذف شد.');
+}
+
+async function saveLocations(locations, active, msg) {
+  if (locBusy) return;
+  locBusy = true;
+  const here = state.prog.current_device;
+  const next = locations.find(l => l.id && l.id === active[here]) || locations.find(l => l.device === here);
+  if (next && next.path !== state.prog.directory) toast('در حال اسکن پوشه‌ی جدید… ممکن است چند ثانیه طول بکشد.', 'info');
+  try {
+    const r = await api(`/api/programs/${enc(state.id)}/locations`, { method: 'PUT', body: { locations, active } });
+    state.editLoc = null;
+    await showProgram(state.id, true);
+    let text = msg;
+    if (r.rescanned) text += ` پوشه‌ی جدید اسکن شد (${r.video_count} ویدیو).`;
+    if (r.failed) text += ` ${r.failed} فایل خوانده نشد.`;
+    if (r.rescanned && state.planMatches === false) text += ' ویدیوها با برنامه‌ی فعلی هم‌خوان نیست.';
+    toast(text, r.failed || (r.rescanned && state.planMatches === false) ? 'info' : 'ok');
+  } catch (err) {
+    toast(err.message, 'error');
+    renderLocations();                       // دایره‌ی انتخاب به حالت ذخیره‌شده برگردد
+  } finally { locBusy = false; }
+}
+
+async function pickFolderFor(input, btn) {
+  btn.disabled = true;
+  try {
+    const r = await api('/api/pick-folder', { method: 'POST', body: { initial: input.value.trim() } });
+    if (r.status === 'ok') input.value = r.path;
+    else if (r.status === 'unavailable') openFsDialog(input.value, path => { input.value = path; });
+  } catch (err) { toast(err.message, 'error'); }
+  finally { btn.disabled = false; }
+}
+
+/* ===================================================================
+   صفحه‌ی حساب: پروفایل (ورود محلی)، دستگاه‌ها، اپ اندروید
+   =================================================================== */
+function updateAcctLink() {
+  const a = $('#acctLink'), pr = state.profile;
+  a.textContent = pr && pr.signed_in ? pr.name : 'ورود';
+  a.title = pr && pr.signed_in ? 'حساب و دستگاه‌ها' : 'ورود یا ساخت پروفایل';
+  if (state.view === 'account') a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+}
+
+async function showAccount() {
+  const my = ++navToken;
+  stopPolling();
+  try {
+    const [prof, android] = await Promise.all([api('/api/profile'), api('/api/android-update')]);
+    if (my !== navToken) return;
+    state.profile = prof; state.android = android;
+  } catch (err) {
+    if (my !== navToken) return;
+    toast(err.message, 'error');
+    history.replaceState(null, '', '#/programs');
+    return showList();
+  }
+  state.view = 'account'; state.id = null;
+  $('#view-list').hidden = true;
+  $('#view-program').hidden = true;
+  $('#view-account').hidden = false;
+  document.title = 'حساب — rootend';
+  updateAcctLink();
+  renderAccount();
+  window.scrollTo(0, 0);
+}
+
+async function refreshAccount() {
+  const [prof, android] = await Promise.all([api('/api/profile'), api('/api/android-update')]);
+  state.profile = prof; state.android = android;
+  updateAcctLink();
+  if (state.view === 'account') renderAccount();
+}
+
+async function copyText(text) {
+  try { await navigator.clipboard.writeText(text); toast('کپی شد.', 'ok'); }
+  catch (e) { toast('کپی نشد؛ شناسه را خودتان انتخاب و کپی کنید.', 'error'); }
+}
+
+async function accountCall(url, opts, okMsg) {
+  try {
+    state.profile = await api(url, opts);
+    await refreshAccount();
+    if (okMsg) toast(okMsg, 'ok');
+    return true;
+  } catch (err) { toast(err.message, 'error'); return false; }
+}
+
+function renderAccount() {
+  $('#acctBody').replaceChildren(profileCard(), devicesCard(), androidCard());
+}
+
+function profileCard() {
+  const pr = state.profile;
+  if (!pr.signed_in) {
+    const name = el('input', { type: 'text', id: 'loginName', dir: 'auto', maxlength: '60', autocomplete: 'off' });
+    const uid = el('input', { type: 'text', id: 'loginId', class: 'ltr', placeholder: 'u_...', autocomplete: 'off', spellcheck: 'false' });
+    return el('div', { class: 'card' },
+      el('h2', { text: 'ورود یا ساخت پروفایل' }),
+      el('p', { class: 'muted', text: 'پروفایل فقط روی همین کامپیوتر ذخیره می‌شود. تا وقتی همگام‌سازی نزنید هیچ داده‌ای به جایی ارسال نمی‌شود.' }),
+      el('form', { onsubmit: e => {
+          e.preventDefault();
+          accountCall('/api/profile/login', { method: 'POST', body: { name: name.value, user_id: uid.value } }, 'وارد شدید.');
+        } },
+        el('label', { class: 'field', for: 'loginName' }, 'نام', name),
+        el('details', { style: 'margin:12px 0' },
+          el('summary', { text: 'قبلاً شناسه گرفته‌اید؟' }),
+          el('label', { class: 'field', for: 'loginId', style: 'margin-top:8px' }, 'شناسه‌ی قبلی', uid),
+          el('p', { class: 'hint', text: 'اگر شناسه‌ای ندارید، خالی بگذارید تا یک شناسه‌ی تازه ساخته شود.' })),
+        el('button', { class: 'btn', type: 'submit', text: 'ورود' })));
+  }
+  const name = el('input', { type: 'text', id: 'renameName', dir: 'auto', maxlength: '60', value: pr.name, autocomplete: 'off' });
+  return el('div', { class: 'card' },
+    el('h2', { text: 'پروفایل' }),
+    el('form', { class: 'inline', onsubmit: e => {
+        e.preventDefault();
+        accountCall('/api/profile', { method: 'PATCH', body: { name: name.value } }, 'نام ذخیره شد.');
+      } },
+      el('label', { class: 'sr', for: 'renameName', text: 'نام' }), name,
+      el('button', { class: 'btn secondary', type: 'submit', text: 'ذخیره‌ی نام' })),
+    el('p', { class: 'field', style: 'margin:14px 0 4px', text: 'شناسه‌ی شما' }),
+    el('div', { class: 'inline' },
+      el('code', { class: 'uid', text: pr.user_id }),
+      el('button', { class: 'btn secondary', type: 'button', text: 'کپی', onclick: () => copyText(pr.user_id) })),
+    el('p', { class: 'hint', text: 'این شناسه کلید پشتیبان آنلاین شماست؛ آن را برای کسی نفرستید. با همین شناسه روی دستگاه دیگر وارد می‌شوید.' }),
+    el('button', { class: 'btn-text danger-text', type: 'button', text: 'خروج', onclick: () => {
+      if (!confirm(`با خروج، نام و شناسه از این دستگاه برداشته می‌شود (برنامه‌ها و تیک‌ها می‌مانند).\nشناسه‌ی شما:\n${pr.user_id}\nآن را جایی نوشته‌اید؟`)) return;
+      accountCall('/api/profile/logout', { method: 'POST' }, 'خارج شدید.');
+    } }));
+}
+
+function devicesCard() {
+  const pr = state.profile;
+  return el('div', { class: 'card' },
+    el('div', { class: 'page-head' },
+      el('h2', { text: 'دستگاه‌ها' }),
+      el('button', { class: 'btn secondary', type: 'button', text: '＋ افزودن دستگاه', onclick: () => openDeviceDialog(null) })),
+    el('p', { class: 'muted', text: 'هر دستگاه (کامپیوتر، گوشی و...) می‌تواند برای هر دوره مسیر خودش را داشته باشد. اپ اندروید را هم اینجا به‌عنوان یک دستگاه اضافه کنید.' }),
+    el('div', {}, pr.devices.map(d => {
+      const here = d.id === pr.current_device;
+      return el('div', { class: 'devrow' },
+        el('span', { class: 'grow' }, el('b', { dir: 'auto', text: d.name })),
+        el('span', { class: 'chip', text: PLATFORM_LABEL[d.platform] || d.platform }),
+        here ? el('span', { class: 'chip ok', text: 'این دستگاه' }) : null,
+        d.app_version ? el('span', { class: 'chip' }, 'نسخه ', timeSpan(d.app_version)) : null,
+        el('button', { class: 'btn-text', type: 'button', text: 'ویرایش', 'aria-label': `ویرایش دستگاه ${d.name}`, onclick: () => openDeviceDialog(d) }),
+        here ? null : el('button', { class: 'btn-text danger-text', type: 'button', text: 'حذف', 'aria-label': `حذف دستگاه ${d.name}`, onclick: async () => {
+          if (!confirm(`دستگاه «${d.name}» و مسیرهایش در همه‌ی برنامه‌ها حذف شود؟`)) return;
+          try { state.profile = await api('/api/profile/devices/' + enc(d.id), { method: 'DELETE' }); await refreshAccount(); toast('دستگاه حذف شد.', 'ok'); }
+          catch (err) { toast(err.message, 'error'); }
+        } }));
+    })));
+}
+
+function androidCard() {
+  const a = state.android, r = a.release;
+  const box = el('div', { class: 'card' }, el('h2', { text: 'اپ اندروید' }));
+  if (a.error) box.append(el('div', { class: 'notice', text: a.error }));
+  if (!r) {
+    if (!a.error) box.append(el('p', { class: 'muted', text: 'هنوز نسخه‌ای برای اپ اندروید منتشر نشده است.' }));
+    return box;
+  }
+  box.append(el('p', {}, 'آخرین نسخه: ', el('b', {}, timeSpan(r.version)), r.released_at ? ` · ${r.released_at}` : ''));
+  if (r.changelog.length) box.append(el('ul', { class: 'release-log' }, r.changelog.map(x => el('li', { dir: 'auto', text: x }))));
+  const links = [];
+  if (r.direct_url) links.push(el('a', { class: 'btn', href: r.direct_url, target: '_blank', rel: 'noopener noreferrer', text: 'دانلود مستقیم (APK)' }));
+  if (r.play_url) links.push(el('a', { class: 'btn secondary', href: r.play_url, target: '_blank', rel: 'noopener noreferrer', text: 'Google Play' }));
+  box.append(links.length ? el('div', { class: 'row' }, links) : el('p', { class: 'muted', text: 'لینک دریافت هنوز ثبت نشده است.' }));
+  if (r.sha256) box.append(el('p', { class: 'hint' }, 'SHA-256 فایل APK: ', el('span', { class: 'dir', text: r.sha256 })));
+  if (!a.devices.length) {
+    box.append(el('p', { class: 'hint', text: 'برای اینکه معلوم شود اپ شما آپدیت لازم دارد، دستگاه اندرویدی‌تان را (با نسخه‌ی نصب‌شده) در بخش «دستگاه‌ها» اضافه کنید.' }));
+  } else {
+    box.append(el('div', {}, a.devices.map(d => el('div', { class: 'devrow' },
+      el('span', { class: 'grow' }, el('b', { dir: 'auto', text: d.name })),
+      d.app_version ? el('span', {}, 'نصب‌شده: ', timeSpan(d.app_version)) : el('span', { class: 'muted', text: 'نسخه‌ی نصب‌شده ثبت نشده' }),
+      d.update_available === true ? el('span', { class: 'chip warn', text: 'آپدیت موجود است' })
+        : d.update_available === false ? el('span', { class: 'chip ok', text: 'به‌روز است' }) : null))));
+  }
+  return box;
+}
+
+const dv = { dlg: $('#devDialog'), form: $('#devForm'), title: $('#devTitle'), name: $('#devName'), platform: $('#devPlatform'),
+             verBox: $('#devVerBox'), ver: $('#devVer'), err: $('#devErr') };
+let devEditing = null;
+dv.platform.replaceChildren(...Object.entries(PLATFORM_LABEL).map(([k, v]) => el('option', { value: k, text: v })));
+dv.platform.addEventListener('change', () => { dv.verBox.hidden = dv.platform.value !== 'android'; });
+function openDeviceDialog(dev) {
+  devEditing = dev;
+  dv.title.textContent = dev ? 'ویرایش دستگاه' : 'دستگاه جدید';
+  dv.name.value = dev ? dev.name : '';
+  dv.platform.value = dev ? dev.platform : 'android';
+  dv.ver.value = dev && dev.app_version ? dev.app_version : '';
+  dv.verBox.hidden = dv.platform.value !== 'android';
+  dv.err.textContent = '';
+  dv.dlg.showModal();
+  dv.name.focus();
+}
+dv.form.addEventListener('submit', async e => {
+  e.preventDefault();
+  dv.err.textContent = '';
+  const body = { name: dv.name.value, platform: dv.platform.value, app_version: dv.platform.value === 'android' ? dv.ver.value : '' };
+  try {
+    state.profile = devEditing
+      ? await api('/api/profile/devices/' + enc(devEditing.id), { method: 'PATCH', body })
+      : await api('/api/profile/devices', { method: 'POST', body });
+    dv.dlg.close();
+    await refreshAccount();
+    toast('دستگاه ذخیره شد.', 'ok');
+  } catch (err) { dv.err.textContent = err.message; }
+});
+$('#devCancel').addEventListener('click', () => dv.dlg.close());
+
+/* ===================================================================
    انتخاب پوشه (پنجره‌ی سیستم؛ اگر نبود، مرورگر پوشه‌ی داخل برنامه)
    =================================================================== */
 let pickSeq = 0;
@@ -1228,13 +1675,18 @@ async function fsLoad(path) {
       el('button', { class: 'btn-text ltr', type: 'button', text: x, onclick: () => fsLoad(x) })));
   } catch (err) { if (my === fsSeq) fsd.err.textContent = err.message; }
 }
-function openFsDialog(start) { fsd.dlg.showModal(); fsLoad((start || '').trim().replace(/^["']|["']$/g, '')); }
+let fsOnChoose = null;
+function openFsDialog(start, onChoose) {
+  fsOnChoose = onChoose || setDirValue;
+  fsd.dlg.showModal();
+  fsLoad((start || '').trim().replace(/^["']|["']$/g, ''));
+}
 
 $('#fsGo').addEventListener('submit', e => { e.preventDefault(); fsLoad(fsd.path.value.trim()); });
 $('#fsUp').addEventListener('click', () => { if (fsCur && fsCur.parent) fsLoad(fsCur.parent); });
 $('#fsHome').addEventListener('click', () => fsLoad(fsCur ? fsCur.home : ''));
 $('#fsCancel').addEventListener('click', () => fsd.dlg.close());
-$('#fsChoose').addEventListener('click', () => { if (fsCur) { setDirValue(fsCur.path); fsd.dlg.close(); } });
+$('#fsChoose').addEventListener('click', () => { if (fsCur) { (fsOnChoose || setDirValue)(fsCur.path); fsd.dlg.close(); } });
 
 /* ===================================================================
    پلیر، پخش ویدیو و زمان توقف
@@ -1399,6 +1851,7 @@ window.addEventListener('hashchange', route);
 /* ---------- شروع ---------- */
 (async function boot() {
   try { state.settings = await api('/api/settings'); } catch (err) { /* بعداً هنگام انتخاب پلیر دوباره تلاش می‌شود */ }
+  try { state.profile = await api('/api/profile'); updateAcctLink(); } catch (err) { /* فقط لینک هدر خالی می‌ماند */ }
   try { await refreshPrograms(); }
   catch (err) {
     $('#listBody').append(el('div', { class: 'notice', text: err.message }));
