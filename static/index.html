@@ -1,4 +1,4 @@
-<!-- /opt/ai/projects/course_web/static/index.html -->
+<!-- /opt/ai/projects/rootend/static/index.html -->
 
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
@@ -200,6 +200,17 @@
   .fs-item::before { content: "▸ "; color: var(--muted); }
   .fs-item:hover { background: var(--bg); }
   .fs-bar { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-top: 6px; }
+
+  /* ---- کارت ریتم مطالعه ---- */
+  .rhythm { border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; margin-top: 22px; background: var(--bg); }
+  .rhythm h2 { margin: 0 0 10px; }
+  .rhythm .stat { background: var(--card); }
+  .rhythm .hint { margin: 6px 0 12px; }
+  .hist { list-style: none; margin: 8px 0 0; padding: 0; }
+  .hist li { display: flex; justify-content: space-between; align-items: baseline; gap: 6px 16px; flex-wrap: wrap;
+             padding: 6px 0; border-bottom: 1px dashed var(--line); }
+  .hist li:last-child { border-bottom: 0; }
+  .hist .when { color: var(--muted); font-size: .85rem; }
 
   [hidden] { display: none !important; }
 </style>
@@ -873,7 +884,7 @@ function dayCard(d, done, cur) {
   const cb = el('input', { type: 'checkbox', 'aria-label': `تیک کل روز ${d.day}` });
   cb.checked = all;
   cb.indeterminate = !all && doneCount > 0;
-  cb.addEventListener('change', () => setDone(d.videos.map(v => v.path), cb.checked));
+  cb.addEventListener('change', () => setDone(d.videos.map(v => v.path), cb.checked, 'day_checkbox'));
 
   const list = el('ul', { class: 'vids', id: `vids-${d.day}` });
   list.hidden = !open;
@@ -900,7 +911,7 @@ function videoRow(v, isDone) {
   const dir = parts.slice(1, -1).join(' / ');   // بدون نام ریشه‌ی دوره و بدون نام فایل
   const cb = el('input', { type: 'checkbox', 'aria-label': `تماشا شد: ${v.name}` });
   cb.checked = isDone;
-  cb.addEventListener('change', () => setDone([v.path], cb.checked));
+  cb.addEventListener('change', () => setDone([v.path], cb.checked, 'video_checkbox'));
   const chip = el('span', { class: 'vpos', 'data-tail': tailOf(v.path) });
   fillChip(chip);
   return el('li', { class: 'vid' + (isDone ? ' done' : '') },
@@ -918,13 +929,13 @@ function videoRow(v, isDone) {
 }
 
 /* تیک‌زدن: اول در صفحه، بعد در فایل JSON روی سرور */
-async function setDone(paths, done) {
+async function setDone(paths, done, source = 'video_checkbox') {
   const s = new Set(state.plan.completed || []);
   for (const p of paths) { if (done) s.add(p); else s.delete(p); }
   state.plan.completed = [...s];
   renderChecklist();
   try {
-    await api(`/api/programs/${enc(state.id)}/progress`, { method: 'POST', body: { paths, done } });
+    await api(`/api/programs/${enc(state.id)}/progress`, { method: 'POST', body: { paths, done, source } });
   } catch (err) {
     toast('ذخیره نشد: ' + err.message, 'error');
     try { await showProgram(state.id, true); } catch (e) { /* ignore */ }
@@ -1027,8 +1038,100 @@ function renderPlanner() {
         kv('حداقل تعداد روز (اگر بتوانید وسط ویدیو توقف کنید)', `${plan.min_days_if_split_anywhere} روز`),
         kv('تعداد روز برنامه (ویدیوها بین دو روز نصف نمی‌شوند)', `${plan.planned_days} روز`))),
       el('p', { class: 'muted', text:
-        'اگر ویدیوی بعدی در زمان باقی‌مانده‌ی آن روز (به‌علاوه‌ی تجاوز مجاز) جا نشود به روز بعد می‌رود؛ برای همین تعداد روز برنامه ممکن است کمی بیشتر از حداقل باشد.' }));
+        'اگر ویدیوی بعدی در زمان باقی‌مانده‌ی آن روز (به‌علاوه‌ی تجاوز مجاز) جا نشود به روز بعد می‌رود؛ برای همین تعداد روز برنامه ممکن است کمی بیشتر از حداقل باشد.' }),
+      rhythmCard());
+    if (state.tab === 'plan') loadRhythm();
   }
+}
+
+/* ===== کارت «ریتم مطالعه» (از done_at ها و لاگ رویدادها؛ حساب‌ها روی سرور انجام می‌شود) ===== */
+let rhythmSeq = 0;
+const hm = min => `${p2(Math.floor(min / 60))}:${p2(min % 60)}`;
+function dayFmt(iso) {                                   // '2026-11-27' -> تاریخ شمسی
+  const [y, m, d] = String(iso).slice(0, 10).split('-').map(Number);
+  try { return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium' }).format(new Date(y, m - 1, d)); }
+  catch (e) { return String(iso); }
+}
+function stampFmt(iso) {                                 // '2026-10-25T14:03:11+03:30' -> تاریخ و ساعت
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return String(iso);
+  try { return new Intl.DateTimeFormat('fa-IR', { dateStyle: 'medium', timeStyle: 'short' }).format(dt); }
+  catch (e) { return String(iso); }
+}
+const joinDots = parts => parts.flatMap((x, i) => i ? [' · ', x] : [x]);
+
+function changeRow(h) {
+  const a = h.after || {}, b = h.before || {};
+  const parts = [];
+  if (h.action === 'created') {
+    parts.push(el('b', { text: 'ساخت برنامه' }), el('span', {}, 'روزانه ', timeSpan(hm(a.daily_minutes || 0))),
+      `تجاوز مجاز ${a.grace_minutes || 0} دقیقه`, `${a.planned_days || 0} روز`);
+  } else {
+    parts.push(el('b', { text: h.action === 'rebuilt' ? 'بازسازی با همان تنظیمات' : 'تغییر تنظیمات' }));
+    if (b.daily_minutes !== a.daily_minutes)
+      parts.push(el('span', {}, 'روزانه از ', timeSpan(hm(b.daily_minutes || 0)), ' به ', timeSpan(hm(a.daily_minutes || 0))));
+    if ((b.grace_minutes || 0) !== (a.grace_minutes || 0))
+      parts.push(`تجاوز مجاز از ${b.grace_minutes || 0} به ${a.grace_minutes || 0} دقیقه`);
+    if (b.planned_days !== a.planned_days) parts.push(`تعداد روز از ${b.planned_days} به ${a.planned_days}`);
+  }
+  if (h.keep_progress === false && h.done_before > 0) parts.push(`تیک‌ها پاک شد (${h.done_before} ویدیو)`);
+  return el('li', {}, el('span', {}, joinDots(parts)), el('span', { class: 'when', text: stampFmt(h.ts) }));
+}
+
+function rhythmBody(r) {
+  const nodes = [];
+  if (r.finished) nodes.push(el('p', { class: 'notice', style: 'background:var(--ok-bg);color:var(--ok)',
+    text: 'همه‌ی ویدیوها تیک خورده‌اند. دوره تمام شده است.' }));
+  nodes.push(
+    el('div', { class: 'stats' },
+      stat('برنامه‌ی هر روز', hm(r.daily_minutes), true),
+      stat('میانگین واقعی در روزهای مطالعه', r.avg_per_study_day ? r.avg_per_study_day.text : '—', true),
+      stat('میانگین واقعی در همه‌ی روزها', r.avg_per_calendar_day ? r.avg_per_calendar_day.text : '—', true),
+      stat('روزهای مطالعه', String(r.study_days))),
+    el('p', { class: 'hint', text: 'روز مطالعه یعنی روزی که در آن حداقل یک ویدیو تیک خورده است. در «همه‌ی روزها» از اولین تیک تا امروز، روزهای استراحت هم حساب می‌شود.' }));
+
+  if (!r.finished) {
+    if (r.forecast) {
+      const f = r.forecast, diff = f.days_vs_plan;
+      const chip = diff === 0 ? el('span', { class: 'chip ok', text: 'مطابق برنامه' })
+        : diff > 0 ? el('span', { class: 'chip warn', text: `${diff} روز دیرتر از برنامه` })
+        : el('span', { class: 'chip ok', text: `${-diff} روز زودتر از برنامه` });
+      nodes.push(
+        el('p', {}, 'با سرعت واقعی‌تان، دوره حدود ', el('b', { text: dayFmt(f.finish_date) }), ' تمام می‌شود. ', chip),
+        el('p', { class: 'muted', text: `اگر از امروز هر روز یک روز از برنامه را تمام کنید: ${dayFmt(r.plan_finish_date)}` }));
+    } else {
+      nodes.push(el('p', { class: 'muted',
+        text: `برای پیش‌بینی تاریخ پایان، حداقل ${r.min_study_days} روز مطالعه لازم است (تا حالا ${r.study_days} روز). از حالا هر ویدیویی که تیک بزنید، تاریخش ثبت می‌شود.` }));
+    }
+  }
+  if (r.untracked_videos > 0) nodes.push(el('p', { class: 'hint',
+    text: `${r.untracked_videos} ویدیوی تیک‌خورده تاریخ ندارند (پیش از ثبت تاریخ تیک خورده‌اند) و در میانگین‌ها حساب نمی‌شوند.` }));
+
+  nodes.push(el('h3', { style: 'margin-top:16px', text: `تاریخچه‌ی تغییر برنامه (${r.history_total})` }));
+  if (!r.history.length) {
+    nodes.push(el('p', { class: 'muted', text: 'هنوز تغییری ثبت نشده. از این به بعد هر بار برنامه‌ی روزانه را بسازید یا تغییر دهید، اینجا می‌آید.' }));
+  } else {
+    nodes.push(el('ul', { class: 'hist' }, r.history.map(changeRow)));
+    if (r.history_total > r.history.length)
+      nodes.push(el('p', { class: 'hint', text: `فقط ${r.history.length} مورد آخر نمایش داده شد.` }));
+  }
+  return nodes;
+}
+
+function rhythmCard() {
+  return el('section', { class: 'rhythm', id: 'rhythmBox', 'aria-live': 'polite' },
+    el('h2', { text: 'ریتم مطالعه' }), el('p', { class: 'muted', text: 'در حال بارگذاری…' }));
+}
+
+async function loadRhythm() {
+  if (!$('#rhythmBox') || !state.plan) return;
+  const my = ++rhythmSeq, id = state.id;
+  let nodes;
+  try { nodes = rhythmBody(await api(`/api/programs/${enc(id)}/rhythm`)); }
+  catch (err) { nodes = [el('p', { class: 'muted', text: err.message })]; }
+  const box = $('#rhythmBox');
+  if (my !== rhythmSeq || id !== state.id || !box) return;
+  box.replaceChildren(el('h2', { text: 'ریتم مطالعه' }), ...nodes);
 }
 function kv(k, v) { return el('tr', {}, el('th', { text: k }), el('td', {}, v)); }
 
@@ -1285,6 +1388,7 @@ $('#posCancel').addEventListener('click', () => posd.dlg.close());
 /* ---------- رویدادها ---------- */
 document.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => {
   state.tab = b.dataset.tab; renderTabs();
+  if (state.tab === 'plan') loadRhythm();
 }));
 $('#btnNew').addEventListener('click', () => openProgramDialog(null));
 $('#btnEdit').addEventListener('click', () => openProgramDialog(state.prog));

@@ -1,4 +1,4 @@
-# /opt/ai/projects/course_web/system_tools.py
+# /opt/ai/projects/rootend/system_tools.py
 # -*- coding: utf-8 -*-
 """
 system_tools.py - rootend: کارهایی که با سیستم‌عامل کاربر سروکار دارند
@@ -193,10 +193,27 @@ class _Saver:
         self.dur: Optional[float] = None
         self.sent: Optional[float] = None
         self.last = 0.0
+        self.watched = 0.0                      # ثانیه‌هایی که واقعاً پخش شده (برای لاگ play_session)
+        self._cp: Optional[float] = None        # آخرین موقعیت دیده‌شده و زمانش
+        self._ct = 0.0
+
+    def _count(self, pos: float) -> None:
+        """
+        فقط پخش عادی را می‌شمارد: اگر موقعیت کمی جلوتر رفته (تا حدود ۲ برابر سرعت) حساب می‌شود.
+        پرش (seek) به جلو یا عقب و مکث شمرده نمی‌شوند. عدد نهایی تقریبی است.
+        """
+        t = time.monotonic()
+        if self._cp is not None:
+            dp, dt = pos - self._cp, min(t - self._ct, 5.0)
+            if 0 < dp <= dt * 2.5 + 1:
+                self.watched += dp
+        self._cp, self._ct = pos, t
 
     def update(self, pos=None, dur=None) -> None:
         if dur is not None and dur > 0:
             self.dur = float(dur)
+        if pos is not None:
+            self._count(float(pos))
         if pos is not None and pos >= 2.0:          # ثانیه‌های اول (قبل از پرش به نقطه‌ی شروع) ثبت نمی‌شوند
             self.pos = float(pos)
         if self.pos is not None and self.pos != self.sent and time.monotonic() - self.last >= self.every:
@@ -295,9 +312,10 @@ def _open_default(video: str) -> None:
 
 def start_player(player: dict, video: str, start: float = 0.0, extra_args: str = "",
                  on_update: Optional[Callable[[float, Optional[float]], None]] = None,
-                 on_exit: Optional[Callable[[], None]] = None) -> dict:
+                 on_exit: Optional[Callable[[float], None]] = None) -> dict:
     """
     ویدیو را با پلیر داده‌شده باز می‌کند.
+    on_exit(ثانیه‌ی دیده‌شده) وقتی ردیابی تمام شد (پلیر بسته شد) صدا زده می‌شود؛ فقط برای mpv و VLC.
     خروجی: {"proc": Popen یا None، "tracking": bool، "can_start": bool}
     """
     pid, exe = player["id"], player.get("path", "")
@@ -336,7 +354,7 @@ def start_player(player: dict, video: str, start: float = 0.0, extra_args: str =
             finally:
                 saver.flush()
                 if on_exit:
-                    on_exit()
+                    on_exit(round(saver.watched, 1))
         threading.Thread(target=run, daemon=True).start()
     else:
         threading.Thread(target=proc.wait, daemon=True).start()    # جلوگیری از پروسه‌ی zombie

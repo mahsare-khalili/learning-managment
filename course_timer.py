@@ -1,4 +1,4 @@
-# /opt/ai/projects/course_web/course_timer.py
+# /opt/ai/projects/rootend/course_timer.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -33,7 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -76,6 +76,12 @@ def ms_of(info: Optional[dict]) -> int:
 
 def format_ms(ms: int) -> str:
     return time_info(ms)["text"]
+
+
+def now_stamp() -> str:
+    """زمان فعلی با اختلاف ساعت محلی، مثلاً 2026-10-25T14:03:11+03:30
+    (برای done_at و فایل رویدادها؛ با اختلاف ساعت، تاریخ‌ها بعداً هم بدون ابهام خوانده می‌شوند)."""
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 def natural_key(name: str):
@@ -324,15 +330,20 @@ def schedule_stats(schedule: list, daily_minutes: int) -> dict:
     }
 
 
-def apply_progress(plan: dict, completed) -> None:
+def apply_progress(plan: dict, completed, done_at: Optional[dict] = None) -> None:
     """
     وضعیت «انجام‌شده» را در فایل پلن هماهنگ می‌کند:
       - plan["completed"]  : فهرست مسیر ویدیوهای تمام‌شده (به ترتیب درس)
-      - هر ویدیو           : done
+      - هر ویدیو           : done و (اگر زمانش معلوم باشد) done_at
       - هر روز             : done، done_count، video_count
+    done_at: دیکشنری {مسیر ویدیو: زمان} برای ویدیوهایی که همین الان تیک خورده‌اند
+    (یا هنگام ساخت دوباره‌ی پلن، زمانی که قبلاً داشته‌اند). ویدیویی که زمانش معلوم
+    نیست (مثلاً تیک‌خورده پیش از اضافه‌شدن done_at) بدون done_at می‌ماند، نه با زمان جعلی.
+    با برداشتن تیک، done_at هم پاک می‌شود.
     هم چک‌لیست ترمینال و هم برنامه‌ی وب از همین تابع استفاده می‌کنند.
     """
     completed = set(completed)
+    done_at = done_at or {}
     ordered = []
     for day in plan["days"]:
         n_done = 0
@@ -341,11 +352,103 @@ def apply_progress(plan: dict, completed) -> None:
             if v["done"]:
                 n_done += 1
                 ordered.append(v["path"])
+                if v["path"] in done_at:
+                    v["done_at"] = done_at[v["path"]]
+            else:
+                v.pop("done_at", None)
         day["video_count"] = len(day["videos"])
         day["done_count"] = n_done
         day["done"] = n_done == len(day["videos"])
     plan["completed"] = ordered
     plan["updated_at"] = datetime.now().isoformat(timespec="seconds")
+
+
+MIN_STUDY_DAYS = 3     # پیش‌بینی تاریخ پایان از این تعداد روز مطالعه به بعد نشان داده می‌شود
+
+
+def _local_date(stamp) -> Optional[date]:
+    """'2026-10-25T14:03:11+03:30' -> تاریخ روز (به وقت محلی) یا None."""
+    try:
+        dt = datetime.fromisoformat(stamp)
+    except (TypeError, ValueError):
+        return None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone()
+    return dt.date()
+
+
+def compute_rhythm(plan: dict, today: Optional[date] = None) -> dict:
+    """
+    ریتم واقعی مطالعه از روی done_at ویدیوهای تیک‌خورده.
+      - «روز مطالعه»  = روزی که حداقل یک ویدیو در آن تیک خورده
+      - میانگین روز مطالعه   = مجموع مدت ویدیوهای تیک‌خورده ÷ تعداد روزهای مطالعه
+      - میانگین روز تقویمی  = همان مجموع ÷ همه‌ی روزها از اولین تیک تا امروز (روزهای استراحت هم حساب می‌شوند)
+      - پیش‌بینی: زمان باقی‌مانده ÷ میانگین روز تقویمی؛ تاریخ برنامه: اگر از امروز هر روز یک روزِ برنامه را تمام کنید
+    ویدیوهای تیک‌خورده‌ی بدون done_at در میانگین نمی‌آیند، ولی در زمان باقی‌مانده حساب می‌شوند.
+    """
+    today = today or date.today()
+    completed = set(plan.get("completed", []))
+    total_ms = done_ms = tracked_ms = 0
+    n_done = n_untracked = 0
+    study = {}                     # تاریخ روز -> مجموع میلی‌ثانیه
+    days_left = 0
+    for d in plan.get("days", []):
+        day_all_done = True
+        for v in d["videos"]:
+            ms = ms_of(v.get("duration"))
+            total_ms += ms
+            if v["path"] in completed:
+                n_done += 1
+                done_ms += ms
+                when = _local_date(v.get("done_at"))
+                if when:
+                    tracked_ms += ms
+                    study[when] = study.get(when, 0) + ms
+                else:
+                    n_untracked += 1
+            else:
+                day_all_done = False
+        if not day_all_done:
+            days_left += 1
+
+    remaining_ms = total_ms - done_ms
+    daily_ms = plan.get("daily_minutes", 0) * 60_000
+    out = {
+        "daily_minutes": plan.get("daily_minutes", 0),
+        "grace_minutes": plan.get("grace_minutes", 0),
+        "done_videos": n_done,
+        "untracked_videos": n_untracked,        # تیک‌خورده‌ها که زمانشان ثبت نشده
+        "study_days": len(study),
+        "remaining": time_info(remaining_ms),
+        "days_left_in_plan": days_left,
+        "min_study_days": MIN_STUDY_DAYS,
+        "avg_per_study_day": None,
+        "avg_per_calendar_day": None,
+        "first_study_date": None,
+        "forecast": None,
+    }
+    if study:
+        first = min(study)
+        calendar_days = (today - first).days + 1
+        out["first_study_date"] = first.isoformat()
+        out["avg_per_study_day"] = time_info(tracked_ms // len(study))
+        out["avg_per_calendar_day"] = time_info(tracked_ms // max(calendar_days, 1))
+    if remaining_ms <= 0:
+        out["finished"] = True
+        return out
+    out["finished"] = False
+    plan_finish = today + timedelta(days=max(days_left - 1, 0))
+    out["plan_finish_date"] = plan_finish.isoformat()
+    if len(study) >= MIN_STUDY_DAYS and tracked_ms > 0:
+        pace = tracked_ms / max((today - min(study)).days + 1, 1)       # میلی‌ثانیه در هر روز تقویمی
+        need = max(math.ceil(remaining_ms / pace), 1)
+        finish = today + timedelta(days=need - 1)
+        out["forecast"] = {
+            "finish_date": finish.isoformat(),
+            "days_needed": need,
+            "days_vs_plan": (finish - plan_finish).days,     # مثبت = دیرتر از برنامه
+        }
+    return out
 
 
 def make_plan(report: dict, daily_minutes: int, grace_minutes: int = 0) -> dict:
@@ -518,7 +621,9 @@ def run_checklist(plan: dict, plan_path) -> None:
         return next((d for d in day_items if not day_done(d)), None)
 
     def save() -> None:
-        apply_progress(plan, done)
+        before = set(plan.get("completed", []))
+        stamp = now_stamp()
+        apply_progress(plan, done, {p: stamp for p in done - before})
         save_json(plan, plan_path)
 
     def render() -> None:

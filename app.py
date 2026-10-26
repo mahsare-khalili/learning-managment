@@ -1,4 +1,4 @@
-# /opt/ai/projects/course_web/app.py
+# /opt/ai/projects/rootend/app.py
 
 # -*- coding: utf-8 -*-
 """
@@ -13,7 +13,8 @@ app.py - rootend (root + tend: مراقبت از ریشه‌ها)، برنامه
 با اولین ویرایش، فایل meta برایشان ساخته می‌شود. چیزی پاک یا جابه‌جا نمی‌شود.
 
 برنامه‌ی حذف‌شده به data/trash/ منتقل می‌شود (قابل بازگردانی)، نه این‌که برای همیشه پاک شود.
-<id>_positions.json زمان توقف ویدیوها را نگه می‌دارد. تنظیمات پلیر در data/settings.json است.
+<id>_positions.json زمان توقف ویدیوها را نگه می‌دارد.
+<id>_events.jsonl لاگ فقط-افزودنی رویدادها (هر خط یک JSON): plan_changed، video_done، play_session. تنظیمات پلیر در data/settings.json است.
 کارهای وابسته به سیستم‌عامل (انتخاب پوشه، پلیر) در system_tools.py هستند.
 
 اجرا:
@@ -28,7 +29,7 @@ import threading
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Literal, Optional
 from urllib.parse import urlparse
 
 from fastapi import FastAPI, HTTPException, Query
@@ -102,6 +103,7 @@ class PlanRequest(BaseModel):
 class ProgressRequest(BaseModel):
     paths: List[str]
     done: bool
+    source: Literal["video_checkbox", "day_checkbox"] = "video_checkbox"
 
 
 # ----------------------------------------------------------------------
@@ -139,6 +141,44 @@ def read_optional(path: Path) -> Optional[dict]:
         return read_json(path)
     except HTTPException:
         return None
+
+
+# ----------------------------------------------------------------------
+# لاگ رویدادها: <id>_events.jsonl (فقط افزودنی؛ هر خط یک رویداد)
+# ----------------------------------------------------------------------
+events_lock = threading.Lock()
+
+
+def events_file(cid: str) -> Path:
+    return DATA_DIR / f"{check_id(cid)}_events.jsonl"
+
+
+def log_event(cid: str, etype: str, ts: Optional[str] = None, **fields) -> None:
+    """یک خط به لاگ اضافه می‌کند. ثبت لاگ هرگز نباید کار اصلی کاربر را خراب کند."""
+    rec = {"v": 1, "ts": ts or ct.now_stamp(), "type": etype, **fields}
+    try:
+        line = json.dumps(rec, ensure_ascii=False, separators=(",", ":"))
+        with events_lock:
+            with open(events_file(cid), "a", encoding="utf-8") as f:
+                f.write(line + "\n")
+    except (OSError, TypeError, ValueError, HTTPException) as exc:
+        print(f"rootend: could not write the event log: {exc}", file=sys.stderr)
+
+
+def read_events(cid: str) -> List[dict]:
+    out: List[dict] = []
+    try:
+        with open(events_file(cid), encoding="utf-8") as f:
+            for line in f:
+                try:
+                    rec = json.loads(line)
+                except ValueError:
+                    continue                     # خط ناقص (مثلاً قطع شدن برق) را رد کن
+                if isinstance(rec, dict):
+                    out.append(rec)
+    except (OSError, HTTPException):
+        pass
+    return out
 
 
 def existing_ids() -> List[str]:
@@ -336,6 +376,21 @@ def remap_completed(old_completed: List[str], plan: dict) -> List[str]:
             if v["path"] in exact or _tail(v["path"]) in tails]
 
 
+def remap_done_at(old_plan: dict, plan: dict) -> dict:
+    """زمان تیک‌خوردن ویدیوها (done_at) را از پلن قبلی به پلن جدید می‌برد؛ با همان مسیر داخل دوره."""
+    stamps = {_tail(v["path"]): v["done_at"]
+              for d in old_plan.get("days", []) for v in d.get("videos", []) if v.get("done_at")}
+    return {v["path"]: stamps[_tail(v["path"])]
+            for d in plan["days"] for v in d["videos"] if _tail(v["path"]) in stamps}
+
+
+def plan_settings(plan: Optional[dict]) -> Optional[dict]:
+    if not plan:
+        return None
+    return {"daily_minutes": plan.get("daily_minutes"), "grace_minutes": plan.get("grace_minutes", 0),
+            "planned_days": plan.get("planned_days")}
+
+
 # ----------------------------------------------------------------------
 # API: برنامه‌ها
 # ----------------------------------------------------------------------
@@ -453,6 +508,8 @@ def delete_program(cid: str):
         files = [p for p in (course_file(cid, k) for k in KINDS) if p.exists()]
         if not files:
             raise HTTPException(404, "برنامه پیدا نشد.")
+        if events_file(cid).exists():
+            files.append(events_file(cid))
         dest = TRASH_DIR / cid
         shutil.rmtree(dest, ignore_errors=True)
         dest.mkdir(parents=True, exist_ok=True)
@@ -515,11 +572,23 @@ def create_plan(cid: str, req: PlanRequest):
         plan = ct.make_plan(report, daily_minutes, req.grace_minutes)
 
         plan_path = course_file(cid, "plan")
-        if req.keep_progress:
-            old = read_optional(plan_path)
-            if old:
-                ct.apply_progress(plan, remap_completed(old.get("completed", []), plan))
+        old = read_optional(plan_path)
+        if req.keep_progress and old:
+            ct.apply_progress(plan, remap_completed(old.get("completed", []), plan),
+                              remap_done_at(old, plan))
         ct.save_json(plan, plan_path)
+
+        before, after = plan_settings(old), plan_settings(plan)
+        if not old:
+            action = "created"
+        elif (before["daily_minutes"], before["grace_minutes"]) == (after["daily_minutes"], after["grace_minutes"]):
+            action = "rebuilt"            # همان تنظیمات (مثلاً بعد از اسکن مجدد)
+        else:
+            action = "changed"
+        log_event(cid, "plan_changed", action=action, before=before, after=after,
+                  keep_progress=req.keep_progress,
+                  done_before=len(old.get("completed", [])) if old else 0,
+                  done_after=len(plan["completed"]))
     return plan
 
 
@@ -534,14 +603,38 @@ def set_progress(cid: str, req: ProgressRequest):
         if unknown:
             raise HTTPException(400, f"ویدیوی ناشناخته در این پلن: {unknown[0]}")
 
-        completed = set(plan.get("completed", []))
+        before = set(plan.get("completed", []))
+        completed = set(before)
         if req.done:
             completed |= set(req.paths)
         else:
             completed -= set(req.paths)
-        ct.apply_progress(plan, completed)
+        changed = [p for p in dict.fromkeys(req.paths) if (p in completed) != (p in before)]
+        stamp = ct.now_stamp()
+        ct.apply_progress(plan, completed, {p: stamp for p in changed} if req.done else None)
         ct.save_json(plan, path)
+
+        day_of = {v["path"]: d["day"] for d in plan["days"] for v in d["videos"]}
+        for p in changed:                  # فقط تغییرهای واقعی؛ تیکِ دوباره‌ی یک ویدیوی تیک‌خورده رویداد نمی‌سازد
+            log_event(cid, "video_done", ts=stamp, video=_tail(p), day=day_of[p],
+                      done=req.done, source=req.source)
     return {"completed": plan["completed"], "updated_at": plan["updated_at"]}
+
+
+@app.get("/api/programs/{cid}/rhythm")
+def study_rhythm(cid: str):
+    """ریتم واقعی مطالعه (از done_at ها) + تاریخچه‌ی تغییر برنامه‌ی روزانه (از لاگ رویدادها)."""
+    meta, report, plan = load_program(cid)
+    if not plan:
+        raise HTTPException(404, "برای این برنامه هنوز برنامه‌ی روزانه ساخته نشده است.")
+    try:
+        data = ct.compute_rhythm(plan)
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(500, "فایل برنامه‌ی روزانه ساختار درستی ندارد.")
+    changes = [e for e in read_events(cid) if e.get("type") == "plan_changed"]
+    data["history_total"] = len(changes)
+    data["history"] = list(reversed(changes))[:20]          # تازه‌ترین اول
+    return data
 
 
 @app.get("/api/programs/{cid}/download/{kind}")
@@ -757,10 +850,19 @@ def play_video(cid: str, req: PlayRequest):
     with sessions_lock:
         SESSIONS[key] = entry
 
-    def on_exit() -> None:
+    started_at = ct.now_stamp()
+
+    def log_session(tracking: bool, watched: Optional[float] = None) -> None:
+        log_event(cid, "play_session", video=tail, player=player["id"], tracking=tracking,
+                  started_at=started_at, ended_at=ct.now_stamp() if tracking else None,
+                  watched_seconds=watched)
+
+    def on_exit(watched: Optional[float] = None) -> None:
         with sessions_lock:
             if SESSIONS.get(key) is entry:
                 SESSIONS.pop(key, None)
+        if watched is not None:            # ردیاب پلیر (mpv/VLC) بعد از بسته‌شدن پلیر با عدد صدا می‌زند
+            log_session(True, watched)
 
     try:
         info = st.start_player(player, video, start, player.get("args", ""),
@@ -772,6 +874,7 @@ def play_video(cid: str, req: PlayRequest):
     entry["proc"] = info["proc"]
     if not info["tracking"]:
         on_exit()
+        log_session(False)                 # پایان این پلیرها معلوم نیست؛ فقط شروع ثبت می‌شود
     return {"already_running": False, "player": player["name"], "tracking": info["tracking"],
             "can_start": info["can_start"], "start": start}
 
