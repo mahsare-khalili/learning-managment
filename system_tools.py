@@ -55,10 +55,16 @@ def _run(cmd: list, timeout: int = 900):
         return None
 
 
+# پیام‌هایی که یعنی «این ابزار اصلاً نتوانست پنجره را نشان بدهد» (نه این‌که کاربر انصراف داده باشد)
+_PICKER_BROKEN = ("cannot open display", "unable to init server", "no protocol specified",
+                  "could not connect to display", "failed to open display", "no module named", "traceback")
+
+
 def pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌ی دوره"):
     """
     پنجره‌ی انتخاب پوشه‌ی خود سیستم را باز می‌کند (تا انتخاب یا انصراف منتظر می‌ماند).
     خروجی: ("ok", مسیر) | ("cancel", None) | ("unavailable", None)
+    فقط یک پنجره باز می‌شود: بعد از اولین ابزارِ سالم سراغ ابزار بعدی نمی‌رویم.
     """
     start = initial if initial and os.path.isdir(initial) else str(Path.home())
     on_linux = sys.platform.startswith("linux")
@@ -75,22 +81,21 @@ def pick_folder_native(initial: str = "", title: str = "انتخاب پوشه‌
     tools.append([sys.executable, "-c", _TK_SNIPPET, start, title])
 
     for cmd in tools:
-        if cmd[0] != sys.executable and shutil.which(cmd[0]) is None:
+        is_tk = cmd[0] == sys.executable
+        if not is_tk and shutil.which(cmd[0]) is None:
             continue
         proc = _run(cmd)
         if proc is None:
             continue
         out = (proc.stdout or "").strip()
-        err = (proc.stderr or "").strip()
+        err = (proc.stderr or "").strip().lower()
         if proc.returncode == 0:
-            if not out:
-                return "cancel", None
-            return "ok", os.path.normpath(out)
-        if proc.returncode == 1 and (not err or "cancel" in err.lower()):
+            return ("ok", os.path.normpath(out)) if out else ("cancel", None)
+        # zenity / kdialog / osascript: کد ۱ یعنی کاربر انصراف داد (هشدارهای GTK در stderr مهم نیستند)
+        if not is_tk and proc.returncode == 1 and not any(m in err for m in _PICKER_BROKEN):
             return "cancel", None
-        # ابزار خراب بود (مثلاً tkinter نصب نیست)؛ سراغ ابزار بعدی
+        # ابزار واقعاً خراب بود (مثلاً tkinter نصب نیست یا صفحه‌ی نمایش در دسترس نیست)؛ سراغ ابزار بعدی
     return "unavailable", None
-
 
 def fs_roots() -> List[str]:
     if os.name == "nt":
