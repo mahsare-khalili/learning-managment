@@ -292,7 +292,7 @@ def load_profile() -> dict:
         devices = data.setdefault("devices", [])
         if not any(d.get("id") == data.get("current_device") for d in devices):
             did = "d_" + secrets.token_hex(4)
-            devices.append({"id": did, "name": socket.gethostname() or "this device", "platform": this_platform()})
+            devices.append({"id": did, "name": device_host(), "platform": this_platform(), "host": device_host()})
             data["current_device"] = did
             changed = True
         if changed:
@@ -1254,16 +1254,11 @@ def play_video(cid: str, req: PlayRequest):
     meta, report, plan = load_program(cid)
     if req.path not in known_video_paths(report, plan):
         raise HTTPException(400, "این ویدیو در این برنامه نیست.")
-    root = effective_directory(meta, report)
-    if not root or not os.path.isdir(root):
-        raise HTTPException(404, "پوشه‌ی دوره روی این دستگاه پیدا نشد. مسیر را در تب «مسیرها» اصلاح کنید.")
     tail = _tail(req.path)
-    root_n = os.path.normpath(root)
-    video = os.path.normpath(os.path.join(root_n, *tail.split("/")))
-    if not video.startswith(root_n.rstrip(os.sep) + os.sep):
-        raise HTTPException(400, "مسیر ویدیو نامعتبر است.")
-    if Path(video).suffix.lower() not in ct.VIDEO_EXTENSIONS or not os.path.isfile(video):
-        raise HTTPException(404, f"فایل ویدیو پیدا نشد: {tail}")
+    found = locate_here(cid, tail)           # مسیر فعال ← بقیه‌ی مسیرهای این دستگاه ← شناسایی دوباره‌ی دستگاه
+    if not found["ok"]:
+        raise HTTPException(404, {"code": found["code"], "message": found["message"]})
+    video = found["video"]
 
     settings = load_settings()
     player = resolve_player(settings["player"])
@@ -1308,7 +1303,8 @@ def play_video(cid: str, req: PlayRequest):
         on_exit()
         log_session(False)                 # پایان این پلیرها معلوم نیست؛ فقط شروع ثبت می‌شود
     return {"already_running": False, "player": player["name"], "tracking": info["tracking"],
-            "can_start": info["can_start"], "start": start}
+        "can_start": info["can_start"], "start": start,
+        "relocated": found["relocated"], "note": found["note"]}
 
 
 @app.get("/api/programs/{cid}/positions")
@@ -1338,6 +1334,167 @@ def set_position(cid: str, req: PositionRequest):
         ct.save_json(data, path)
     return {"positions": data}
 
+
+# ----------------------------------------------------------------------
+# شناسایی «این دستگاه» و پیدا کردن مسیر دوره روی همین دستگاه
+# ----------------------------------------------------------------------
+def device_host() -> str:
+    return socket.gethostname() or "this device"
+
+
+def detect_device() -> dict:
+    """
+    «این دستگاه» را دوباره شناسایی می‌کند (با نام کامپیوتر + نوع سیستم‌عامل).
+    کاربرد: پروفایل یا برنامه‌ها از دستگاه دیگری کپی/همگام شده‌اند و current_device هنوز به دستگاه قبلی اشاره می‌کند.
+      ok        همین دستگاه درست بود (در پروفایل قدیمی بدون host، فقط نام کامپیوتر ثبت می‌شود)
+      switched  به دستگاهِ هم‌نامی که قبلاً ثبت شده بود منتقل شد
+      created   دستگاه جدیدی ساخته شد (مسیر دوره‌ها باید برایش تعریف شود)
+      full      جای دستگاه جدید نیست
+    """
+    host, plat = device_host(), this_platform()
+    with write_lock:
+        prof = load_profile()
+        devs = prof["devices"]
+        cur = next(d for d in devs if d["id"] == prof["current_device"])
+        status, changed = "ok", False
+        if cur.get("host") is None and cur.get("platform") == plat:
+            cur["host"], changed = host, True
+        elif cur.get("platform") != plat or cur.get("host", host) != host:
+            match = next((d for d in devs if d.get("host") == host and d.get("platform") == plat), None)
+            if match:
+                prof["current_device"], status, changed = match["id"], "switched", True
+            elif len(devs) >= MAX_DEVICES:
+                status = "full"
+            else:
+                taken = {d["name"].casefold() for d in devs}
+                name, n = host, 2
+                while name.casefold() in taken:
+                    name, n = f"{host} ({n})", n + 1
+                new_dev = {"id": "d_" + secrets.token_hex(4), "name": name, "platform": plat, "host": host}
+                devs.append(new_dev)
+                prof["current_device"], status, changed = new_dev["id"], "created", True
+        if changed:
+            ct.save_json(prof, PROFILE_FILE)
+        dev = next(d for d in devs if d["id"] == prof["current_device"])
+    text = {
+        "ok": f"دستگاه درست شناسایی شد: «{dev['name']}».",
+        "switched": f"دستگاه دوباره شناسایی شد: «{dev['name']}».",
+        "created": f"این دستگاه قبلاً ثبت نشده بود؛ «{dev['name']}» ساخته شد. مسیر هر دوره را باید روی آن تعریف کنید.",
+        "full": "این دستگاه با دستگاه ثبت‌شده نمی‌خواند ولی جایی برای دستگاه جدید نیست. در صفحه‌ی «حساب» یکی را حذف کنید.",
+    }[status]
+    return {"status": status, "id": dev["id"], "name": dev["name"], "message": text, "profile": profile_view(prof)}
+
+
+def _video_in(root: str, tail: str) -> Optional[str]:
+    """مسیر کامل ویدیو داخل root؛ اگر پوشه یا فایل نبود None."""
+    if not root or not os.path.isdir(root):
+        return None
+    root_n = os.path.normpath(root)
+    video = os.path.normpath(os.path.join(root_n, *tail.split("/")))
+    if not video.startswith(root_n.rstrip(os.sep) + os.sep):
+        raise HTTPException(400, "مسیر ویدیو نامعتبر است.")
+    if Path(video).suffix.lower() not in ct.VIDEO_EXTENSIONS or not os.path.isfile(video):
+        return None
+    return video
+
+
+def _probe(cid: str, tail: Optional[str]) -> dict:
+    """مسیرهای ثبت‌شده‌ی این دوره برای همین دستگاه را (اول مسیر فعال) می‌آزماید. اگر tail داده شود، ویدیو هم باید باشد."""
+    meta, report, _plan = load_program(cid)
+    prof = load_profile()
+    here = prof["current_device"]
+    locs, active = locations_of(meta, report, prof)
+    act = normalize_active(locs, active).get(here)
+    mine = sorted((l for l in locs if l["device"] == here), key=lambda l: l["id"] != act)
+    chosen = video = None
+    for l in mine:
+        video = _video_in(l["path"], tail) if tail else None
+        if video or (not tail and os.path.isdir(l["path"])):
+            chosen = l
+            break
+    name = next((d["name"] for d in prof["devices"] if d["id"] == here), "این دستگاه")
+    return {"here": here, "name": name, "mine": mine, "act": act, "chosen": chosen, "video": video}
+
+
+def set_active_location(cid: str, device: str, lid: str) -> None:
+    """مسیر فعالِ یک دستگاه را (بدون اسکن مجدد) عوض می‌کند."""
+    with write_lock:
+        meta = read_optional(course_file(cid, "meta")) or {}
+        report = read_optional(course_file(cid, "report"))
+        locs, active = locations_of(meta, report, load_profile())
+        active = normalize_active(locs, active)
+        if not any(l["id"] == lid and l["device"] == device for l in locs):
+            return
+        active[device] = lid
+        meta.setdefault("created_at", now())
+        meta.setdefault("name", name_of(cid))
+        meta["locations"], meta["active"] = locs, active
+        meta.pop("directory", None)
+        meta["updated_at"] = now()
+        ct.save_json(meta, course_file(cid, "meta"))
+
+
+def locate_here(cid: str, tail: Optional[str] = None, redetect: bool = True) -> dict:
+    """
+    مسیر دوره (و با دادن tail، فایل ویدیو) را روی همین دستگاه پیدا می‌کند:
+      ۱) مسیر فعال  ۲) بقیه‌ی مسیرهای ثبت‌شده‌ی همین دستگاه (اولینِ سالم فعال می‌شود)
+      ۳) اگر نشد و redetect=True: دستگاه دوباره شناسایی می‌شود و یک بار دیگر امتحان می‌کنیم
+    """
+    pr = _probe(cid, tail)
+    device = None
+    if not pr["chosen"] and redetect:
+        device = detect_device()
+        if device["status"] in ("switched", "created"):
+            pr = _probe(cid, tail)
+    if pr["chosen"]:
+        switched = pr["chosen"]["id"] != pr["act"]
+        if switched:
+            set_active_location(cid, pr["here"], pr["chosen"]["id"])
+        notes = []
+        if device and device["status"] in ("switched", "created"):
+            notes.append(device["message"])
+        if switched:
+            notes.append(f"مسیر فعال این دوره روی این دستگاه خودکار به «{pr['chosen']['path']}» تغییر کرد.")
+        return {"ok": True, "video": pr["video"], "path": pr["chosen"]["path"], "switched": switched,
+                "relocated": bool(notes), "note": " ".join(notes), "device": device}
+    name = pr["name"]
+    if not pr["mine"]:
+        code = "no_path"
+        msg = (f"این دوره روی «{name}» مسیری ندارد. برای پخش، مسیر پوشه‌ی دوره را روی همین دستگاه تعریف کنید: "
+               "تب «مسیرها» ← «انتخاب پوشه…» یا نوشتن مسیر ← «افزودن مسیر».")
+    elif not any(os.path.isdir(l["path"]) for l in pr["mine"]):
+        code = "dir_missing"
+        msg = (f"پوشه‌ی دوره روی «{name}» پیدا نشد ({pr['mine'][0]['path']}). دستگاه و مسیرهای ثبت‌شده دوباره بررسی شد "
+               "و مسیر سالمی نبود. مسیر درست را در تب «مسیرها» تعریف کنید.")
+    else:
+        code = "file_missing"
+        msg = (f"پوشه‌ی دوره هست ولی فایل ویدیو در آن پیدا نشد: {tail}. اگر پوشه تغییر کرده، «اسکن مجدد» بزنید "
+               "یا مسیر درست را در تب «مسیرها» تعریف کنید.")
+    return {"ok": False, "code": code, "message": msg, "device": device}
+
+
+@app.post("/api/profile/detect-device")
+def detect_device_api():
+    """دکمه‌ی «شناسایی مجدد دستگاه» (وقتی برنامه‌ی خاصی باز نیست)."""
+    return detect_device()
+
+
+@app.post("/api/programs/{cid}/relocate")
+def relocate_program(cid: str):
+    """دکمه‌ی «شناسایی مجدد دستگاه و مسیر»: دستگاه را دوباره شناسایی می‌کند و برای این دوره، مسیری را که واقعاً هست فعال می‌کند."""
+    load_program(cid)
+    det = detect_device()
+    res = locate_here(cid, redetect=False)
+    parts = [det["message"]]
+    if res["ok"]:
+        parts.append(f"مسیر فعال روی این دستگاه: {res['path']}"
+                     + (" (از بین مسیرهای ثبت‌شده انتخاب شد)" if res["switched"] else ""))
+    else:
+        parts.append(res["message"])
+    meta, report, plan = load_program(cid)
+    return {"found": res["ok"], "code": None if res["ok"] else res["code"], "message": " ".join(parts),
+            "device": {k: det[k] for k in ("status", "id", "name")}, "profile": det["profile"],
+            "program": summarize(cid, meta, report, plan)}
 
 if __name__ == "__main__":
     import uvicorn
