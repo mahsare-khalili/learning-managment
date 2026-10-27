@@ -1,0 +1,11 @@
+{
+  "version": "1.4.0",
+  "released_at": "2026-10-25",
+  "changelog": [
+    "مسیر دوره روی هر دستگاه جدا ذخیره می‌شود",
+    "رفع چند اشکال کوچک"
+  ],
+  "apk_url": "https://example.com/downloads/rootend-1.4.0.apk",
+  "sha256": "",
+  "play_url": "https://play.google.com/store/apps/details?id=com.example.rootend"
+}
