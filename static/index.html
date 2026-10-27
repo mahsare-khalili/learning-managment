@@ -246,7 +246,11 @@
   .suggest:empty { display: none; }
   .suggest .btn-text { display: block; min-height: 36px; padding: 4px 8px; direction: ltr; text-align: left; overflow-wrap: anywhere; }
   #pdOthers { margin: 16px 0 4px; border-top: 1px solid var(--line); padding-top: 10px; }
-  #pdOthers summary { cursor: pointer; font-weight: 700; padding: 4px 0; }
+  #pdOthers h3 { font-size: 1rem; margin: 0 0 8px; }
+  .devbar { display: flex; gap: 6px 12px; align-items: center; justify-content: space-between; flex-wrap: wrap;
+            background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; margin: 8px 0; }
+  .devbar .btn-text { min-height: 36px; padding: 2px 10px; }
+  .devbar .btn-text:hover { background: var(--card); }
   #pdOthers .field { margin-bottom: 10px; }
 
   [hidden] { display: none !important; }
@@ -320,23 +324,31 @@
       <p class="hint" id="pdNameHint"></p>
       <p class="field-err" id="pdNameErr" role="alert"></p>
 
-      <label class="field" for="pdDir" id="pdDirLabel">مسیر پوشه‌ی دوره</label>
+            <div class="devbar">
+        <span id="pdDevInfo"></span>
+        <button class="btn-text" type="button" id="pdRedetect">شناسایی مجدد دستگاه</button>
+      </div>
+      <p class="hint" id="pdDevStatus" role="status"></p>
+
+      <label class="field" for="pdDir" id="pdDirLabel">مسیر پوشه‌ی دوره روی این دستگاه</label>
       <div class="inline">
         <input type="text" id="pdDir" class="ltr" placeholder="C:\Courses\Python   یا   /home/me/Courses/Python"
                autocomplete="off" spellcheck="false" aria-describedby="pdDirHint pdSameDir pdDirErr">
         <button class="btn secondary" type="button" id="pdPick">انتخاب پوشه…</button>
       </div>
       <p class="hint" id="pdPickStatus" role="status" style="margin-bottom:0"></p>
+      <p class="hint" id="pdActiveInfo"></p>
       <div class="suggest" id="pdSuggest"></div>
       <p class="hint" id="pdDirHint"></p>
       <p class="hint" id="pdSameDir"></p>
       <p class="field-err" id="pdDirErr" role="alert"></p>
 
-      <details id="pdOthers" hidden>
-        <summary>مسیر روی دستگاه‌های دیگر (اختیاری)</summary>
+      <section id="pdOthers">
+        <h3>مسیر روی دستگاه‌های دیگر</h3>
         <div id="pdOtherRows"></div>
-        <p class="hint">مسیر دستگاه‌های دیگر فقط ذخیره می‌شود و همین‌جا بررسی نمی‌شود. برای چند مسیر روی یک دستگاه یا حذف یک مسیر، تب «مسیرها» را باز کنید.</p>
-      </details>
+        <p class="hint" id="pdOthersHint"></p>
+        <button class="btn-text" type="button" id="pdAddDevice">＋ افزودن دستگاه دیگر</button>
+      </section>
     </fieldset>
     <p class="field-err" id="pdFormErr" role="alert"></p>
     <p class="muted" id="pdStatus" role="status" style="margin:8px 0 0"></p>
@@ -381,29 +393,6 @@
       <button class="btn secondary" value="cancel" autofocus>انصراف</button>
     </div>
   </form>
-</dialog>
-
-<!-- ===== مرورگر پوشه‌ی داخل برنامه ===== -->
-<dialog id="fsDialog" aria-labelledby="fsTitle">
-  <div class="dlg">
-    <h2 id="fsTitle">انتخاب پوشه</h2>
-    <form id="fsGo" class="inline">
-      <input type="text" id="fsPath" class="ltr" aria-label="مسیر فعلی" spellcheck="false" autocomplete="off">
-      <button class="btn secondary" type="submit">برو</button>
-    </form>
-    <div class="fs-bar">
-      <button class="btn-text" type="button" id="fsUp">↑ پوشه‌ی بالاتر</button>
-      <button class="btn-text" type="button" id="fsHome">پوشه‌ی خانه</button>
-      <span id="fsRoots"></span>
-    </div>
-    <p class="field-err" id="fsErr" role="alert"></p>
-    <ul class="fs-list" id="fsList"></ul>
-    <p class="hint" id="fsInfo"></p>
-    <div class="dlg-actions">
-      <button class="btn" type="button" id="fsChoose">انتخاب این پوشه</button>
-      <button class="btn secondary" type="button" id="fsCancel">انصراف</button>
-    </div>
-  </div>
 </dialog>
 
 <!-- ===== انتخاب پلیر ===== -->
@@ -528,10 +517,14 @@ async function api(url, opts = {}) {
   let data = null;
   try { data = await res.json(); } catch (e) { /* بدنه‌ی خالی */ }
   if (!res.ok) {
-    let msg = res.statusText || 'خطا';
-    if (data && data.detail) msg = typeof data.detail === 'string' ? data.detail : 'ورودی نامعتبر است.';
+    let msg = res.statusText || 'خطا', code = '';
+    const d = data && data.detail;
+    if (typeof d === 'string') msg = d;
+    else if (d && typeof d === 'object' && !Array.isArray(d)) { msg = d.message || msg; code = d.code || ''; }
+    else if (d) msg = 'ورودی نامعتبر است.';
     const err = new Error(msg);
     err.status = res.status;
+    err.code = code;
     throw err;
   }
   return data;
@@ -707,8 +700,10 @@ const pd = {
   submit: $('#pdSubmit'), cancel: $('#pdCancel'), del: $('#pdDelete'),
   pick: $('#pdPick'), pickStatus: $('#pdPickStatus'),
   label: $('#pdDirLabel'), notice: $('#pdNotice'), suggest: $('#pdSuggest'), others: $('#pdOthers'), otherRows: $('#pdOtherRows'),
+  devInfo: $('#pdDevInfo'), devStatus: $('#pdDevStatus'), redetect: $('#pdRedetect'), activeInfo: $('#pdActiveInfo'),
+  othersHint: $('#pdOthersHint'), addDevice: $('#pdAddDevice'),
 };
-let editing = null, busy = false;
+let editing = null, busy = false, pdRelocated = false;
 let pdInputs = new Map(), pdCands = [];
 
 /* دستگاه‌ها و مسیر هر برنامه روی هر دستگاه */
@@ -741,23 +736,42 @@ function updateDirHints() {
   updateSuggest();
 }
 
-/* ردیف مسیر برای هر دستگاهِ دیگر + پیشنهاد مسیر از دستگاه هم‌نوع */
-function fillDeviceRows(p) {
+/* بخش «مسیر روی دستگاه‌ها»: دستگاه شناسایی‌شده، وضعیت مسیر این دستگاه، و ردیف مسیر برای هر دستگاهِ دیگر */
+function setNotice(p) {
+  pd.notice.hidden = !(p && !p.directory);
+  pd.notice.textContent = `این برنامه روی «${devName(meId(p)) || 'این دستگاه'}» مسیری ندارد (احتمالاً از دستگاه دیگری آمده). پوشه‌ی دوره را روی همین دستگاه انتخاب کنید.`;
+}
+
+function fillDeviceRows(p, keepTyped = false) {
+  const kept = new Map();                                   // مقدارهای تایپ‌شده‌ی هنوز ذخیره‌نشده
+  if (keepTyped) for (const [id, input] of pdInputs) kept.set(id, input.value);
   const me = meId(p), devs = devicesNow();
   const mine = devs.find(d => d.id === me);
   const others = devs.filter(d => d.id !== me);
-  pd.label.textContent = others.length && mine ? `مسیر پوشه‌ی دوره روی «${mine.name}» (این دستگاه)` : 'مسیر پوشه‌ی دوره';
+  const myName = mine ? mine.name : 'این دستگاه';
+
+  pd.devInfo.replaceChildren('دستگاه شناسایی‌شده: ', el('b', { dir: 'auto', text: myName }),
+    ...(mine ? [' ', el('span', { class: 'chip', text: PLATFORM_LABEL[mine.platform] || mine.platform })] : []));
+  pd.label.textContent = `مسیر پوشه‌ی دوره روی «${myName}» (این دستگاه)`;
+  pd.activeInfo.textContent = !p ? '' : !p.directory ? 'برای این دستگاه هنوز مسیری ثبت نشده است.'
+    : p.directory_exists ? '✓ این پوشه روی این دستگاه پیدا شد و دوره از همین مسیر اجرا می‌شود.'
+    : '✗ این پوشه روی این دستگاه پیدا نشد؛ مسیر درست را بنویسید یا «انتخاب پوشه…» را بزنید.';
+
   pdInputs = new Map();
   pd.otherRows.replaceChildren(...others.map(d => {
-    const input = el('input', { type: 'text', class: 'ltr', value: p ? activePathOf(p, d.id) : '', placeholder: PATH_EXAMPLE[d.platform] || '',
-                                autocomplete: 'off', spellcheck: 'false' });
+    const saved = p ? activePathOf(p, d.id) : '';
+    const input = el('input', { type: 'text', class: 'ltr', value: kept.has(d.id) ? kept.get(d.id) : saved,
+                                placeholder: PATH_EXAMPLE[d.platform] || '', autocomplete: 'off', spellcheck: 'false' });
     pdInputs.set(d.id, input);
     return el('label', { class: 'field' },
-      el('span', {}, el('span', { dir: 'auto', text: d.name }), ' ', el('span', { class: 'chip', text: PLATFORM_LABEL[d.platform] || d.platform })),
+      el('span', {}, el('span', { dir: 'auto', text: d.name }), ' ',
+        el('span', { class: 'chip', text: PLATFORM_LABEL[d.platform] || d.platform }), ' ',
+        saved ? el('span', { class: 'chip ok', text: 'مسیر ثبت شده' }) : el('span', { class: 'chip warn', text: 'مسیر ندارد' })),
       input);
   }));
-  pd.others.hidden = !others.length;
-  pd.others.open = !!p && others.some(d => activePathOf(p, d.id));
+  pd.othersHint.textContent = others.length
+    ? 'مسیر هر دستگاه جدا ذخیره می‌شود؛ تغییر مسیرِ این دستگاه، مسیرِ دستگاه‌های دیگر را عوض نمی‌کند. مسیر دستگاه‌های دیگر همین‌جا بررسی نمی‌شود. برای چند مسیر روی یک دستگاه یا حذف یک مسیر، تب «مسیرها» را باز کنید.'
+    : 'دستگاه دیگری ثبت نشده. اگر همین دوره روی گوشی یا کامپیوتر دیگری هم هست، «افزودن دستگاه دیگر» را بزنید و مسیرش را جدا وارد کنید.';
   pdCands = p && mine ? others.filter(d => d.platform === mine.platform && activePathOf(p, d.id))
     .map(d => ({ name: d.name, path: activePathOf(p, d.id) })) : [];
 }
@@ -769,6 +783,45 @@ function updateSuggest() {
       onclick: () => { pd.dir.value = c.path; updateDirHints(); pd.dir.focus(); } })));
 }
 pd.dir.addEventListener('input', updateDirHints);
+
+
+/* دکمه‌ی «شناسایی مجدد دستگاه»: دستگاه را دوباره می‌شناسد و (در ویرایش) مسیر سالم همین دوره را فعال می‌کند */
+pd.redetect.addEventListener('click', async () => {
+  pd.redetect.disabled = true;
+  pd.devStatus.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }), 'در حال شناسایی دستگاه…');
+  const untouched = !editing || normDir(pd.dir.value) === normDir(editing.directory);   // کاربر مسیر را دست‌کاری نکرده؟
+  try {
+    const r = await api(editing ? `/api/programs/${enc(editing.id)}/relocate` : '/api/profile/detect-device', { method: 'POST' });
+    state.profile = r.profile;
+    state.devices = r.profile.devices;
+    if (editing) {
+      await refreshPrograms();
+      editing = state.programs.find(x => x.id === editing.id) || editing;
+      if (untouched) pd.dir.value = editing.directory;
+      setNotice(editing);
+    }
+    fillDeviceRows(editing, true);
+    updateDirHints();
+    pdRelocated = true;
+    pd.devStatus.textContent = r.message;
+  } catch (err) { pd.devStatus.textContent = err.message; }
+  finally { pd.redetect.disabled = false; }
+});
+
+/* افزودن دستگاه (مثلاً گوشی) بدون خروج از این پنجره */
+pd.addDevice.addEventListener('click', () => openDeviceDialog(null, () => {
+  state.devices = state.profile.devices;
+  fillDeviceRows(editing, true);
+  updateDirHints();
+  pd.devStatus.textContent = 'دستگاه اضافه شد؛ مسیر دوره روی آن را در بخش «مسیر روی دستگاه‌های دیگر» بنویسید.';
+}));
+
+/* اگر در پنجره «شناسایی مجدد» زده شد، صفحه‌ی پشتش هم تازه شود */
+pd.dlg.addEventListener('close', () => {
+  if (!pdRelocated) return;
+  pdRelocated = false;
+  if (state.view === 'program') showProgram(state.id, true); else renderList();
+});
 
 function setBusy(on, scanning) {
   busy = on;
@@ -784,8 +837,9 @@ function openProgramDialog(p, focusPath = false) {
   clearErrors();
   pickSeq++; resetPick();
   fillDeviceRows(p);
-  pd.notice.hidden = !(p && !p.directory);
-  pd.notice.textContent = `این برنامه روی «${devName(meId(p)) || 'این دستگاه'}» مسیری ندارد (احتمالاً از دستگاه دیگری آمده). پوشه‌ی دوره را روی همین دستگاه انتخاب کنید.`;
+  setNotice(p);
+  pd.devStatus.textContent = '';
+  pdRelocated = false;
   pd.title.textContent = p ? 'ویرایش برنامه' : 'برنامه‌ی جدید';
   pd.name.value = p ? p.name : '';
   pd.dir.value = p ? p.directory : '';
@@ -839,6 +893,7 @@ pd.form.addEventListener('submit', async e => {
       ? await api('/api/programs/' + enc(target.id), { method: 'PATCH', body })
       : await api('/api/programs', { method: 'POST', body });
     setBusy(false);
+    pdRelocated = false;
     pd.dlg.close();
     await refreshPrograms();
     if (target) {
@@ -916,11 +971,13 @@ function renderHeader() {
   $('#courseDir').textContent = p.directory || '';
   const who = devName(p.current_device) || 'این دستگاه';
   const nDev = Object.keys(p.active).length;
-  const line = [];
-  if (p.directory) line.push(`مسیر روی «${who}»`);
-  if (nDev > 1) line.push(el('button', { class: 'btn-text', type: 'button', text: `همه‌ی مسیرها (${nDev} دستگاه)`,
-    onclick: () => { state.tab = 'locations'; renderTabs(); } }));
-  $('#courseDev').replaceChildren(...line);
+  const me = state.devices.find(d => d.id === p.current_device);
+  const plat = me ? ` (${PLATFORM_LABEL[me.platform] || me.platform})` : '';
+  $('#courseDev').replaceChildren(
+    p.directory ? `مسیر بالا روی «${who}»${plat} فعال است و دوره از همین مسیر اجرا می‌شود.`
+                : `روی «${who}»${plat} مسیری برای این دوره تعریف نشده است.`,
+    el('button', { class: 'btn-text', type: 'button', onclick: goLocations,
+                   text: nDev > 1 ? `همه‌ی مسیرها (${nDev} دستگاه)` : 'مدیریت مسیرها' }));
   const warn = $('#dirWarn');
   warn.replaceChildren(
     p.directory ? `این پوشه روی «${who}» پیدا نشد. اگر جابه‌جا یا تغییر نام داده شده، مسیر را اصلاح کنید. چک‌لیست همچنان کار می‌کند.`
@@ -1344,10 +1401,34 @@ const cleanPath = v => v.trim().replace(/^["']|["']$/g, '');
 const locsOf = () => state.prog.locations.map(l => ({ id: l.id, device: l.device, path: l.path }));
 
 function renderLocations() {
+  const p = state.prog, me = state.devices.find(d => d.id === p.current_device);
   $('#panel-locations').replaceChildren(
-    el('p', { class: 'muted', text: 'همین دوره روی هر دستگاه ممکن است در مسیر دیگری باشد. برای هر دستگاه مسیرها را بنویسید و یکی را فعال کنید؛ برنامه روی هر دستگاه از مسیر فعالِ همان دستگاه استفاده می‌کند.' }),
+    el('div', { class: 'devbar' },
+      el('span', {}, 'دستگاه شناسایی‌شده: ', el('b', { dir: 'auto', text: me ? me.name : 'این دستگاه' }), ' ',
+        me ? el('span', { class: 'chip', text: PLATFORM_LABEL[me.platform] || me.platform }) : null),
+      el('button', { class: 'btn secondary', type: 'button', text: 'شناسایی مجدد دستگاه و مسیر',
+                     onclick: e => relocateHere(e.currentTarget) })),
+    el('p', { class: 'muted', text: 'همین دوره روی هر دستگاه ممکن است در مسیر دیگری باشد. برای هر دستگاه مسیرها را بنویسید و یکی را فعال کنید؛ برنامه روی هر دستگاه از مسیر فعالِ همان دستگاه استفاده می‌کند. اگر ویدیویی پیدا نشود، برنامه خودش دستگاه و مسیرهای ثبت‌شده را دوباره بررسی می‌کند.' }),
     ...state.devices.map(dev => deviceBlock(dev)),
     el('p', { class: 'hint' }, 'دستگاهی که در این فهرست نیست را در ', el('a', { href: '#/account', text: 'صفحه‌ی حساب' }), ' اضافه کنید.'));
+}
+
+/* «مسیر فعال» هر دستگاه (و اینکه روی این دستگاه دوره از کدام مسیر اجرا می‌شود) */
+function activeLine(dev, here) {
+  const p = state.prog, act = p.locations.find(l => l.id === p.active[dev.id]);
+  if (!act) return null;
+  return el('p', { class: 'hint', style: 'margin:0 0 6px' }, 'مسیر فعال: ', el('span', { class: 'path', text: act.path }),
+    here ? ' ← دوره روی این دستگاه از همین مسیر اجرا می‌شود.' : '');
+}
+
+async function relocateHere(btn) {
+  btn.disabled = true;
+  try {
+    const r = await api(`/api/programs/${enc(state.id)}/relocate`, { method: 'POST' });
+    state.profile = r.profile;
+    await showProgram(state.id, true);
+    toast(r.message, r.found ? 'ok' : 'info');
+  } catch (err) { toast(err.message, 'error'); btn.disabled = false; }
 }
 
 function deviceBlock(dev) {
@@ -1359,6 +1440,7 @@ function deviceBlock(dev) {
     el('h3', {}, el('span', { dir: 'auto', text: dev.name }),
       el('span', { class: 'chip', text: PLATFORM_LABEL[dev.platform] || dev.platform }),
       here ? el('span', { class: 'chip ok', text: 'این دستگاه' }) : null),
+    activeLine(dev, here),
     el('div', { class: 'loclist' }, mine.length ? mine.map(l => locRow(dev, l, here))
       : el('p', { class: 'muted', text: 'برای این دستگاه هنوز مسیری ثبت نشده است.' })),
     el('form', { class: 'locadd', onsubmit: e => { e.preventDefault(); addLocation(dev, input.value); } },
@@ -1592,8 +1674,10 @@ const dv = { dlg: $('#devDialog'), form: $('#devForm'), title: $('#devTitle'), n
 let devEditing = null;
 dv.platform.replaceChildren(...Object.entries(PLATFORM_LABEL).map(([k, v]) => el('option', { value: k, text: v })));
 dv.platform.addEventListener('change', () => { dv.verBox.hidden = dv.platform.value !== 'android'; });
-function openDeviceDialog(dev) {
+let afterDeviceSaved = null;
+function openDeviceDialog(dev, after = null) {
   devEditing = dev;
+  afterDeviceSaved = after;
   dv.title.textContent = dev ? 'ویرایش دستگاه' : 'دستگاه جدید';
   dv.name.value = dev ? dev.name : '';
   dv.platform.value = dev ? dev.platform : 'android';
@@ -1613,15 +1697,19 @@ dv.form.addEventListener('submit', async e => {
       : await api('/api/profile/devices', { method: 'POST', body });
     dv.dlg.close();
     await refreshAccount();
+    const cb = afterDeviceSaved; afterDeviceSaved = null;
+    if (cb) cb();
     toast('دستگاه ذخیره شد.', 'ok');
   } catch (err) { dv.err.textContent = err.message; }
 });
 $('#devCancel').addEventListener('click', () => dv.dlg.close());
 
 /* ===================================================================
-   انتخاب پوشه (پنجره‌ی سیستم؛ اگر نبود، مرورگر پوشه‌ی داخل برنامه)
+   /* ===================================================================
+   انتخاب پوشه: فقط پنجره‌ی خودِ سیستم (اگر در دسترس نبود، مسیر را باید نوشت)
    =================================================================== */
 let pickSeq = 0;
+const NO_PICKER_MSG = 'پنجره‌ی انتخاب پوشه روی این سیستم در دسترس نیست؛ مسیر را بنویسید یا جای‌گذاری کنید.';
 function resetPick() { pd.pick.disabled = false; pd.pickStatus.replaceChildren(); }
 function setDirValue(path) {
   pd.dir.value = path;
@@ -1629,24 +1717,17 @@ function setDirValue(path) {
   updateDirHints();
   pd.submit.focus();
 }
-function browseInApp() { pickSeq++; resetPick(); openFsDialog(pd.dir.value); }
 
 async function pickFolder() {
   const my = ++pickSeq;
   pd.pick.disabled = true;
-  pd.pickStatus.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }),
-    'پنجره‌ی انتخاب پوشه باز شد؛ اگر آن را نمی‌بینید، ',
-    el('button', { class: 'btn-text', type: 'button', text: 'پوشه را داخل همین صفحه مرور کنید', onclick: browseInApp,
-                   style: 'min-height:0;padding:0 4px' }), '.');
+  pd.pickStatus.replaceChildren(el('span', { class: 'spin', 'aria-hidden': 'true' }), 'پنجره‌ی انتخاب پوشه باز شد…');
   try {
     const r = await api('/api/pick-folder', { method: 'POST', body: { initial: pd.dir.value.trim() } });
     if (my !== pickSeq) return;
     resetPick();
     if (r.status === 'ok') setDirValue(r.path);
-    else if (r.status === 'unavailable') {
-      pd.pickStatus.textContent = 'پنجره‌ی انتخاب پوشه‌ی سیستم در دسترس نیست؛ مرورگر پوشه‌ی داخل برنامه باز شد.';
-      openFsDialog(pd.dir.value);
-    }
+    else if (r.status === 'unavailable') pd.pickStatus.textContent = NO_PICKER_MSG;
   } catch (err) {
     if (my !== pickSeq) return;
     resetPick();
@@ -1654,39 +1735,6 @@ async function pickFolder() {
   }
 }
 pd.pick.addEventListener('click', pickFolder);
-
-const fsd = { dlg: $('#fsDialog'), path: $('#fsPath'), list: $('#fsList'), err: $('#fsErr'), info: $('#fsInfo'), roots: $('#fsRoots') };
-let fsCur = null, fsSeq = 0;
-
-async function fsLoad(path) {
-  const my = ++fsSeq;
-  fsd.err.textContent = '';
-  try {
-    const r = await api('/api/fs?path=' + enc(path || ''));
-    if (my !== fsSeq) return;
-    fsCur = r;
-    fsd.path.value = r.path;
-    fsd.list.replaceChildren(...r.dirs.map(d => el('li', {},
-      el('button', { class: 'fs-item', type: 'button', dir: 'auto', text: d.name, onclick: () => fsLoad(d.path) }))));
-    if (!r.dirs.length) fsd.list.append(el('li', { class: 'empty', text: 'زیرپوشه‌ای ندارد.' }));
-    fsd.info.textContent = `${r.dirs.length} زیرپوشه · ${r.videos} ویدیو مستقیم در همین پوشه`;
-    $('#fsUp').disabled = !r.parent;
-    fsd.roots.replaceChildren(...r.roots.filter(x => r.roots.length > 1).map(x =>
-      el('button', { class: 'btn-text ltr', type: 'button', text: x, onclick: () => fsLoad(x) })));
-  } catch (err) { if (my === fsSeq) fsd.err.textContent = err.message; }
-}
-let fsOnChoose = null;
-function openFsDialog(start, onChoose) {
-  fsOnChoose = onChoose || setDirValue;
-  fsd.dlg.showModal();
-  fsLoad((start || '').trim().replace(/^["']|["']$/g, ''));
-}
-
-$('#fsGo').addEventListener('submit', e => { e.preventDefault(); fsLoad(fsd.path.value.trim()); });
-$('#fsUp').addEventListener('click', () => { if (fsCur && fsCur.parent) fsLoad(fsCur.parent); });
-$('#fsHome').addEventListener('click', () => fsLoad(fsCur ? fsCur.home : ''));
-$('#fsCancel').addEventListener('click', () => fsd.dlg.close());
-$('#fsChoose').addEventListener('click', () => { if (fsCur) { (fsOnChoose || setDirValue)(fsCur.path); fsd.dlg.close(); } });
 
 /* ===================================================================
    پلیر، پخش ویدیو و زمان توقف
@@ -1739,6 +1787,16 @@ plr.form.addEventListener('submit', async e => {
   } catch (err) { plr.err.textContent = err.message; }
 });
 
+/* خطاهایی که یعنی «مسیر دوره روی این دستگاه مشکل دارد»؛ کاربر را به تب «مسیرها» می‌بریم */
+const PATH_ERRORS = new Set(['no_path', 'dir_missing', 'file_missing']);
+function goLocations() {
+  state.tab = 'locations';
+  renderTabs();
+  const box = $('#panel-locations');
+  if (box) box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+async function refreshQuietly() { try { await showProgram(state.id, true); } catch (e) { /* ignore */ } }
+
 async function playVideo(v) {
   if (!state.settings || !state.settings.configured) { openPlayerDialog(() => playVideo(v)); return; }
   try {
@@ -1748,6 +1806,7 @@ async function playVideo(v) {
     let msg = `«${v.name}» با ${r.player} باز شد`;
     if (r.start) msg += ` (از ${fmtShort(r.start * 1000)})`;
     msg += '.';
+    if (r.note) msg += ' ' + r.note;
     const saved = state.positions[tail];
     if (!r.can_start && saved && state.settings.resume) msg += ` این پلیر نمی‌تواند از آخرین نقطه (${fmtShort(saved.seconds * 1000)}) شروع کند.`;
     if (!r.tracking && !state.noteUntracked) {
@@ -1755,12 +1814,18 @@ async function playVideo(v) {
       state.noteUntracked = true;
     }
     toast(msg, 'ok');
+    if (r.relocated) refreshQuietly();
     if (r.tracking) {
       if (!state.active.includes(tail)) state.active = [...state.active, tail];
       updatePosChips();
       startPolling();
     }
-  } catch (err) { toast(err.message, 'error'); }
+  } catch (err) {
+    if (PATH_ERRORS.has(err.code)) {
+      await refreshQuietly();      // شاید سرور دستگاه/مسیر را اصلاح کرده باشد؛ صفحه تازه شود
+      toast(err.message, 'error', { label: 'رفتن به مسیرها', run: goLocations });
+    } else toast(err.message, 'error');
+  }
 }
 
 /* نمایش «آخرین توقف» کنار هر ویدیو */
